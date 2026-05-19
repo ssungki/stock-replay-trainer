@@ -433,7 +433,7 @@ if st.session_state.get("session_done"):
         if not st.session_state.get("contest_submitted"):
             _entries.append({
                 "team": _contest["team"], "ret": a["total_ret"],
-                "asset": a["final"],
+                "asset": a["final"], "curve": list(st.session_state.equity_log),
                 "ts": dt.datetime.now().strftime("%m-%d %H:%M")})
             st.session_state.contest_submitted = True
         _ranked = sorted(_entries, key=lambda x: x["ret"], reverse=True)
@@ -443,8 +443,23 @@ if st.session_state.get("session_done"):
              "최종자산": f"{e['asset']:,.0f}원", "기록": e["ts"]}
             for i, e in enumerate(_ranked, 1)
         ], hide_index=True, width="stretch")
-        st.caption(f"내 팀 **{_contest['team']}** · 같은 코드로 참가한 다른 팀이 "
-                   "세션을 마칠 때마다 순위가 갱신됩니다 (앱 재배포 시 초기화).")
+        # 팀별 수익률 곡선 한 그래프에 겹쳐 보기
+        _cfig = go.Figure()
+        for e in _ranked:
+            _cv = e.get("curve") or []
+            _cfig.add_trace(go.Scatter(
+                y=_cv, x=list(range(len(_cv))), mode="lines+markers",
+                name=e["team"], line=dict(width=2), marker=dict(size=5)))
+        _cfig.add_hline(y=0, line=dict(color="#999", width=1))
+        _cfig.update_layout(
+            height=320, margin=dict(l=10, r=10, t=10, b=10),
+            xaxis=dict(title="매매 진행 (매수·매도 시점 순서)"),
+            yaxis=dict(ticksuffix="%"),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02))
+        st.plotly_chart(_cfig, width="stretch", key="contest_curves")
+        st.caption(f"내 팀 **{_contest['team']}** · 팀별 수익률 곡선이 한 그래프에 "
+                   "겹쳐 표시됩니다. 다른 팀이 세션을 마칠 때마다 갱신 "
+                   "(앱 재배포 시 초기화).")
         if st.button("🔄 순위표 새로고침"):
             st.rerun()
 
