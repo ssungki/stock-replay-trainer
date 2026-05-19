@@ -447,16 +447,7 @@ c3.metric("보유", f"{shares:,}주", f"평단 {avg:,.0f}" if shares else "현�
 c4.metric("총자산", f"{total:,.0f} 원")
 c5.metric("누적 수익률", f"{ret:+.2f} %", f"{total - START_CASH:+,.0f} 원")
 
-# ── 컨트롤: 진행 ──
-b1, b3 = st.columns(2)
-if b1.button("▶ 다음 봉", width="stretch", disabled=g["revealed"]):
-    advance(1)
-    st.rerun()
-if b3.button("🔎 정답 공개", width="stretch", disabled=g["revealed"]):
-    g["revealed"] = True
-    st.rerun()
-
-# ── 컨트롤: 종목 ──
+# ── 컨트롤: 종목 (진행 버튼 위에 배치) ──
 _no = st.session_state.stock_no
 _len = int(st.session_state.session_len)
 _last = _no >= _len
@@ -472,6 +463,15 @@ if n2.button("⏹ 지금 끝내기 (결과 보기)", width="stretch",
 if n3.button("🔄 새 세션", width="stretch"):
     if new_account(int(st.session_state.play_n)):
         st.rerun()
+
+# ── 컨트롤: 진행 ──
+b1, b3 = st.columns(2)
+if b1.button("▶ 다음 봉", width="stretch", disabled=g["revealed"]):
+    advance(1)
+    st.rerun()
+if b3.button("🔎 정답 공개", width="stretch", disabled=g["revealed"]):
+    g["revealed"] = True
+    st.rerun()
 
 # ── 컨트롤: 매매 ──
 _entries = entry_count(g)
