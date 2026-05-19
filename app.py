@@ -23,7 +23,7 @@ _replay_chart = components.declare_component(
 
 START_CASH = 10_000_000   # 시작 자본 (원)
 CTX = 200                 # 시작 시 보여줄 과거 봉 수
-HIST_YEARS = 12           # 종목당 가져올 과거 데이터 길이 (년)
+HIST_YEARS = 15           # 종목당 가져올 과거 데이터 길이 (년)
 PLOT_WINDOW = 600         # 캔들차트에 그릴 최근 봉 수
 
 UP, DOWN = "#e84a5f", "#3d6bb3"
@@ -35,7 +35,7 @@ MAX_ENTRIES = 3           # 한 종목당 매수(진입) 최대 횟수
 def load_listing():
     df = fdr.StockListing("KRX")[["Code", "Name", "Market", "Marcap"]].dropna()
     df = df[df["Name"].astype(str).str.strip() != ""]
-    return df.sort_values("Marcap", ascending=False).head(1200).reset_index(drop=True)
+    return df.sort_values("Marcap", ascending=False).head(200).reset_index(drop=True)
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -374,9 +374,9 @@ with st.sidebar:
     st.number_input("세션 종목 수", min_value=3, max_value=30,
                     value=15, step=1, key="session_len",
                     help="한 세션에 플레이할 종목 수. 다 끝내면 결과 리포트가 나옵니다.")
-    st.number_input("플레이 봉 수", min_value=150, max_value=500,
-                    value=300, step=50, key="play_n",
-                    help="한 종목당 플레이할 봉 수 (150~500).")
+    st.number_input("플레이 봉 수", min_value=150, max_value=2000,
+                    value=2000, step=50, key="play_n",
+                    help="한 종목당 플레이할 봉 수 (150~2000).")
     st.caption(f"시작 자본 {START_CASH:,}원 · 종목을 갈아타도 자본·수익률은 누적됩니다.")
 
 st.title("📊 봉 리플레이 매매 연습")
