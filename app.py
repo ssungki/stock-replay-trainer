@@ -132,10 +132,16 @@ def archive_stock(g):
             if first_buy_i is not None and last_sell_i is not None else None)
     quick = (any(s["i"] - first_buy_i <= 2 for s in sells)
              if first_buy_i is not None else False)
+    e = g["cur"] + 1                    # 복기용 — 플레이한 구간까지의 차트
     st.session_state.history.append({
-        "name": g["name"], "code": g["code"],
+        "name": g["name"], "code": g["code"], "market": g["market"],
         "traded": traded, "n_trades": len(trades),
         "pnl": pnl, "pnl_pct": pnl_pct, "hold": hold, "quick_sell": quick,
+        "chart": {
+            "o": g["o"][:e], "h": g["h"][:e], "l": g["l"][:e], "c": g["c"][:e],
+            "trades": [dict(t) for t in trades],
+            "d0": g["dates"][CTX - 1], "d1": g["dates"][g["cur"]],
+        },
     })
 
 
@@ -240,6 +246,31 @@ def analyze_session() -> dict:
         "avg_win": avg_win, "avg_loss": avg_loss, "pl_ratio": pl_ratio,
         "avg_hold": avg_hold, "good": good, "bad": bad,
     }
+
+
+def build_review_fig(h):
+    """복기용 — 한 종목 캔들차트에 매수 ▲·매도 ▼ 지점을 찍는다."""
+    ch = h["chart"]
+    xs = list(range(len(ch["c"])))
+    fig = go.Figure(go.Candlestick(
+        x=xs, open=ch["o"], high=ch["h"], low=ch["l"], close=ch["c"],
+        increasing_line_color=UP, decreasing_line_color=DOWN, name="가격"))
+    for t in ch["trades"]:
+        is_buy = t["type"] == "buy"
+        fig.add_trace(go.Scatter(
+            x=[t["i"]], y=[t["price"]], mode="markers",
+            marker=dict(size=12, color=BUY_C if is_buy else SELL_C,
+                        symbol="triangle-up" if is_buy else "triangle-down",
+                        line=dict(width=1, color="#222")),
+            showlegend=False, hoverinfo="text",
+            hovertext=f"{'매수' if is_buy else '매도'} {t['n']:,}주 "
+                      f"@ {t['price']:,.0f}"))
+    fig.update_layout(
+        height=320, margin=dict(l=10, r=10, t=10, b=10),
+        xaxis=dict(rangeslider=dict(visible=False), showticklabels=False),
+        yaxis=dict(tickformat=",.0f", ticksuffix="원"),
+        showlegend=False, dragmode="pan")
+    return fig
 
 
 def advance(k: int):
@@ -356,6 +387,38 @@ if st.session_state.get("session_done"):
          "보유봉": h["hold"] if h["hold"] is not None else "-"}
         for i, h in enumerate(st.session_state.history, 1)
     ], hide_index=True, width="stretch")
+
+    # ── 복기 — 종목별 매매 차트 ──
+    st.subheader("🔍 복기 — 종목별 매매 차트")
+    st.caption("매수 ▲ · 매도 ▼ 지점이 차트에 찍힙니다. 종목을 펼쳐서 확인하세요.")
+    review_figs = []
+    for i, h in enumerate(st.session_state.history, 1):
+        res = "관망" if not h["traded"] else f"{h['pnl_pct']:+.1f}%"
+        fig = build_review_fig(h)
+        review_figs.append((i, h, res, fig))
+        with st.expander(f"{i}. {h['name']}  ·  {res}  ·  거래 {h['n_trades']}회"):
+            st.plotly_chart(fig, width="stretch", key=f"review_{i}")
+            st.caption(f"{h['name']} ({h['code']}, {h['market']})  ·  "
+                       f"{h['chart']['d0']} ~ {h['chart']['d1']}")
+
+    # 복기 기록 HTML 다운로드 — 나중에 브라우저로 열어 다시 볼 수 있다
+    _pl = f" · 손익비 {a['pl_ratio']:.2f}" if a['pl_ratio'] is not None else ""
+    _html = ["<!DOCTYPE html><html lang='ko'><head><meta charset='utf-8'>",
+             "<title>매매 복기 기록</title>",
+             "<script src='https://cdn.plot.ly/plotly-2.35.2.min.js'></script>",
+             "<style>body{font-family:sans-serif;max-width:1000px;margin:24px "
+             "auto;padding:0 12px;}h2{border-bottom:2px solid #eee;"
+             "padding-top:14px;}</style></head><body>",
+             f"<h1>매매 복기 기록 — {a['n']}종목</h1>",
+             f"<p>세션 수익률 <b>{a['total_ret']:+.2f}%</b> · "
+             f"승률 {a['win_rate']:.0f}%{_pl}</p>"]
+    for i, h, res, fig in review_figs:
+        _html.append(f"<h2>{i}. {h['name']} — {res}</h2>")
+        _html.append(fig.to_html(include_plotlyjs=False, full_html=False))
+    _html.append("</body></html>")
+    st.download_button("📥 복기 기록 저장 (HTML — 나중에 열어볼 수 있음)",
+                       "".join(_html), file_name="매매복기.html",
+                       mime="text/html")
 
     if st.button("🔄 새 세션 시작", type="primary"):
         if new_account(int(st.session_state.play_n)):
