@@ -149,7 +149,9 @@ function render(a) {
   const f = buildFigure(a, shapes);
   const config = {
     displaylogo: false, scrollZoom: true, responsive: true,
-    modeBarButtonsToAdd: ["drawline", "eraseshape"]
+    modeBarButtonsToAdd: ["drawline", "eraseshape"],
+    // 매매 연습엔 쓸모없는 데이터 선택 도구 제거 (박스/올가미 선택)
+    modeBarButtonsToRemove: ["select2d", "lasso2d"]
   };
   Plotly.react(gd, f.traces, f.layout, config);
   if (!bound) {
