@@ -28,6 +28,7 @@ PLOT_WINDOW = 600         # 캔들차트에 그릴 최근 봉 수
 
 UP, DOWN = "#e84a5f", "#3d6bb3"
 BUY_C, SELL_C = "#16c79a", "#ffa502"
+MAX_ENTRIES = 3           # 한 종목당 매수(진입) 최대 횟수
 
 
 @st.cache_data(ttl=86400, show_spinner="종목 목록 불러오는 중...")
@@ -65,10 +66,13 @@ def pick_stock(play_n: int):
             ratio = cl[1:] / cl[:-1]
             if ((ratio > 1.7) | (ratio < 0.3)).any():
                 continue
+        vol = (w["Volume"].fillna(0) if "Volume" in w
+               else w["Close"] * 0)
         return {
             "code": row["Code"], "name": row["Name"], "market": row["Market"],
             "o": [float(x) for x in w["Open"]], "h": [float(x) for x in w["High"]],
             "l": [float(x) for x in w["Low"]], "c": [float(x) for x in w["Close"]],
+            "v": [float(x) for x in vol],
             "dates": [d.date().isoformat() for d in w.index],
             "play_n": play_n, "cur": CTX - 1,
             "shares": 0, "cost": 0.0, "trades": [], "revealed": False,
@@ -248,9 +252,17 @@ def advance(k: int):
         g["cur"] += 1
 
 
+def entry_count(g) -> int:
+    """이 종목에서 지금까지 한 매수(진입) 횟수."""
+    return sum(1 for t in g["trades"] if t["type"] == "buy")
+
+
 def do_buy():
     """몰빵 매수 — 보유 현금 전액으로 현재 봉 종가에 산다."""
     g = st.session_state.game
+    if entry_count(g) >= MAX_ENTRIES:
+        st.toast(f"이 종목 매수(진입)는 {MAX_ENTRIES}회까지입니다.", icon="⚠️")
+        return
     p = cur_price()
     n = int(st.session_state.cash // p)
     if n < 1:
@@ -399,11 +411,15 @@ if n3.button("🔄 새 세션", width="stretch"):
         st.rerun()
 
 # ── 컨트롤: 매매 ──
+_entries = entry_count(g)
+_entries_left = MAX_ENTRIES - _entries
 t1, t2 = st.columns(2)
 with t1:
-    if st.button("🟢 몰빵 매수", width="stretch",
-                 disabled=g["revealed"] or shares > 0,
-                 help="보유 현금 전액으로 현재 종가에 매수"):
+    _buy_label = (f"🟢 몰빵 매수 (진입 {_entries_left}/{MAX_ENTRIES})"
+                  if _entries_left > 0 else "🟢 진입 횟수 소진")
+    if st.button(_buy_label, width="stretch",
+                 disabled=g["revealed"] or shares > 0 or _entries_left <= 0,
+                 help=f"보유 현금 전액으로 현재 종가에 매수 · 한 종목당 {MAX_ENTRIES}회까지"):
         do_buy()
         st.rerun()
 with t2:
@@ -435,13 +451,14 @@ for tr in g["trades"]:
         "text": f"{'매수' if tr['type']=='buy' else '매도'} {tr['n']:,}주 "
                 f"@ {tr['price']:,.0f}",
     })
+_vol = (g.get("v") or [0.0] * len(g["c"]))[lo:end + 1]
 chart_val = _replay_chart(
     x=xs, o=g["o"][lo:end + 1], h=g["h"][lo:end + 1],
-    l=g["l"][lo:end + 1], c=g["c"][lo:end + 1],
+    l=g["l"][lo:end + 1], c=g["c"][lo:end + 1], v=_vol,
     markers=markers, cur=cur, lo=lo, end=end, price=price,
     ymin=_ymin, ymax=_ymax, up=UP, down=DOWN,
     trendlines=st.session_state.trendlines,
-    resetToken=st.session_state.get("reset_token", 0), height=520,
+    resetToken=st.session_state.get("reset_token", 0), height=560,
     key="replaychart", default=None)
 if isinstance(chart_val, dict) and "lines" in chart_val:
     st.session_state.trendlines = chart_val["lines"]
