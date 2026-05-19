@@ -207,12 +207,9 @@ c4.metric("총자산", f"{total:,.0f} 원")
 c5.metric("누적 수익률", f"{ret:+.2f} %", f"{total - START_CASH:+,.0f} 원")
 
 # ── 컨트롤: 진행 ──
-b1, b2, b3 = st.columns(3)
+b1, b3 = st.columns(2)
 if b1.button("▶ 다음 봉", width="stretch", disabled=g["revealed"]):
     advance(1)
-    st.rerun()
-if b2.button("⏩ 5봉", width="stretch", disabled=g["revealed"]):
-    advance(5)
     st.rerun()
 if b3.button("🔎 정답 공개", width="stretch", disabled=g["revealed"]):
     g["revealed"] = True
@@ -267,10 +264,22 @@ for tr in g["trades"]:
         showlegend=False, hoverinfo="text",
         hovertext=f"{'매수' if tr['type']=='buy' else '매도'} {tr['n']:,}주 "
                   f"@ {tr['price']:,.0f}"))
-fig.add_vline(x=cur, line=dict(color="#aaa", width=1, dash="dot"))
-fig.add_hline(y=price, line=dict(color="#777", width=1, dash="dash"),
-              annotation_text=f"종가 {price:,.0f}원", annotation_position="top left",
-              annotation_font=dict(size=13, color="#222"))
+# 현재봉 표시선·종가선은 layout.shapes 가 아닌 트레이스로 그린다.
+# (shapes 로 그리면 봉을 전진할 때 사용자가 그린 추세선까지 함께 지워진다)
+_vh = g["h"][lo:end + 1]
+_vl = g["l"][lo:end + 1]
+_ymin, _ymax = min(_vl), max(_vh)
+fig.add_trace(go.Scatter(
+    x=[cur, cur], y=[_ymin, _ymax], mode="lines",
+    line=dict(color="#aaa", width=1, dash="dot"),
+    showlegend=False, hoverinfo="skip"))
+fig.add_trace(go.Scatter(
+    x=[lo, end], y=[price, price], mode="lines",
+    line=dict(color="#777", width=1, dash="dash"),
+    showlegend=False, hoverinfo="skip"))
+fig.add_annotation(x=lo, y=price, text=f"종가 {price:,.0f}원",
+                   showarrow=False, xanchor="left", yanchor="bottom",
+                   font=dict(size=13, color="#222"))
 fig.update_layout(
     height=520, margin=dict(l=10, r=10, t=30, b=10),
     dragmode="pan", newshape=dict(line=dict(color="#ff9500", width=2)),
