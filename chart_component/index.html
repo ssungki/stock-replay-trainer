@@ -151,7 +151,7 @@ function renderTools() {
 }
 
 // ── 수평 스냅 — 거의 수평으로 그은 추세선을 정확히 수평으로 ──
-const SNAP_DEG = 15;        // 이 각도 이내면 수평으로 맞춤
+const SNAP_DEG = 2;         // 이 각도 이내(거의 완전 수평)일 때만 수평으로 맞춤
 let applyingSnap = false;
 
 function lineAngleDeg(s) {
