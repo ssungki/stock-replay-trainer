@@ -150,6 +150,31 @@ function renderTools() {
   toolsEl.appendChild(ca);
 }
 
+// ── 수평 스냅 — 거의 수평으로 그은 추세선을 정확히 수평으로 ──
+const SNAP_DEG = 15;        // 이 각도 이내면 수평으로 맞춤
+let applyingSnap = false;
+
+function lineAngleDeg(s) {
+  const fl = gd._fullLayout;
+  if (!fl || !fl.xaxis || !fl.yaxis) return 90;
+  const xr = fl.xaxis.range, yr = fl.yaxis.range;
+  const dx = (s.x1 - s.x0) / ((xr[1] - xr[0]) || 1) * (fl.xaxis._length || 1);
+  const dy = (s.y1 - s.y0) / ((yr[1] - yr[0]) || 1) * (fl.yaxis._length || 1);
+  return Math.abs(Math.atan2(dy, dx) * 180 / Math.PI);   // 0(수평)~90(수직)
+}
+function snapHorizontal() {
+  let changed = false;
+  (gd.layout.shapes || []).forEach(function (s) {
+    if (s.type !== "line") return;
+    const ang = lineAngleDeg(s);
+    if (ang < SNAP_DEG || ang > 180 - SNAP_DEG) {
+      const my = (s.y0 + s.y1) / 2;
+      if (s.y0 !== my || s.y1 !== my) { s.y0 = my; s.y1 = my; changed = true; }
+    }
+  });
+  return changed;
+}
+
 function render(a) {
   // 추세선 결정 — 최초 로드/종목 리셋 때만 Python 값을 쓰고,
   // 그 외(봉 전진 등 일반 리렌더)에는 프론트의 현재 추세선을 그대로 유지한다.
@@ -172,11 +197,21 @@ function render(a) {
   if (!bound) {
     bound = true;
     gd.on("plotly_relayout", function (ev) {
+      if (applyingSnap) return;
       const keys = Object.keys(ev || {});
       const shapeChange = keys.some(function (k) {
         return k === "shapes" || k.indexOf("shapes[") === 0;
       });
       if (!shapeChange) return;
+      if (snapHorizontal()) {        // 거의 수평인 선을 정확히 수평으로
+        applyingSnap = true;
+        Plotly.relayout(gd, { shapes: gd.layout.shapes }).then(function () {
+          applyingSnap = false;
+          renderTools();
+          setValue({ lines: collectLines() });
+        });
+        return;
+      }
       renderTools();
       setValue({ lines: collectLines() });
     });
