@@ -439,21 +439,7 @@ avg = g["cost"] / shares if shares else 0.0
 st.caption(f"종목 {st.session_state.stock_no} / {st.session_state.session_len}"
            "  ·  정체는 [정답 공개] 또는 종목 종료 시 공개")
 
-# ── 정답 (공개되면 제목 바로 밑에 표시) ──
-if g["revealed"]:
-    st.success(
-        f"**정답** — {g['name']} ({g['code']}, {g['market']})  ·  "
-        f"플레이 구간 {g['dates'][CTX - 1]} ~ {g['dates'][cur]}")
-
-# ── 지표 ──
-c1, c2, c3, c4, c5 = st.columns(5)
-c1.metric("진행", f"{played} / {g['play_n']} 봉")
-c2.metric("현재가", f"{price:,.0f} 원")
-c3.metric("보유", f"{shares:,}주", f"평단 {avg:,.0f}" if shares else "현금 보유")
-c4.metric("총자산", f"{total:,.0f} 원")
-c5.metric("누적 수익률", f"{ret:+.2f} %", f"{total - START_CASH:+,.0f} 원")
-
-# ── 컨트롤: 종목 (진행 버튼 위에 배치) ──
+# ── 컨트롤: 종목 (제목 바로 밑) ──
 _no = st.session_state.stock_no
 _len = int(st.session_state.session_len)
 _last = _no >= _len
@@ -469,6 +455,20 @@ if n2.button("⏹ 지금 끝내기 (결과 보기)", width="stretch",
 if n3.button("🔄 새 세션", width="stretch"):
     if new_account(int(st.session_state.play_n)):
         st.rerun()
+
+# ── 정답 (공개되면 표시) ──
+if g["revealed"]:
+    st.success(
+        f"**정답** — {g['name']} ({g['code']}, {g['market']})  ·  "
+        f"플레이 구간 {g['dates'][CTX - 1]} ~ {g['dates'][cur]}")
+
+# ── 지표 ──
+c1, c2, c3, c4, c5 = st.columns(5)
+c1.metric("진행", f"{played} / {g['play_n']} 봉")
+c2.metric("현재가", f"{price:,.0f} 원")
+c3.metric("보유", f"{shares:,}주", f"평단 {avg:,.0f}" if shares else "현금 보유")
+c4.metric("총자산", f"{total:,.0f} 원")
+c5.metric("누적 수익률", f"{ret:+.2f} %", f"{total - START_CASH:+,.0f} 원")
 
 # ── 컨트롤: 진행 ──
 b1, b3 = st.columns(2)
