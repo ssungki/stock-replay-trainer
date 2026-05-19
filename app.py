@@ -495,6 +495,12 @@ with t2:
         do_sell(int(sell_pct))
         st.rerun()
 
+# ── 정답 (공개되면 차트 바로 위에 표시) ──
+if g["revealed"]:
+    st.success(
+        f"**정답** — {g['name']} ({g['code']}, {g['market']})  ·  "
+        f"플레이 구간 {g['dates'][CTX - 1]} ~ {g['dates'][cur]}")
+
 # ── 캔들차트 + 추세선 (커스텀 컴포넌트) ──
 # 추세선은 컴포넌트에서 자유롭게 그리고, 봉을 넘겨도 session_state 로 유지된다.
 st.session_state.setdefault("trendlines", [])
@@ -542,15 +548,11 @@ efig.update_layout(
 st.plotly_chart(efig, width="stretch", key="equitychart")
 st.caption("수익률 그래프는 **매수·매도할 때만** 갱신됩니다 (봉 전진으론 변하지 않음).")
 
-# ── 정답 공개 ──
+# ── 종목 진행 안내 ──
 if g["revealed"]:
-    d0, d1 = g["dates"][CTX - 1], g["dates"][cur]
-    st.success(
-        f"**정답** — {g['name']} ({g['code']}, {g['market']})  ·  "
-        f"플레이 구간 {d0} ~ {d1}")
     st.markdown(
         f"현재 계좌 — 총자산 **{total:,.0f}원**, "
         f"누적 수익 **{total - START_CASH:+,.0f}원 ({ret:+.2f}%)**  ·  "
-        "[다음 종목]으로 이어서 하거나 [처음부터]로 초기화하세요.")
+        "[다음 종목]으로 이어서 하거나 [새 세션]으로 초기화하세요.")
 else:
     st.caption("미래 봉은 가려져 있습니다. [다음 봉]으로 전진하세요.")
