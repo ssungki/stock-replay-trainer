@@ -79,8 +79,8 @@ function buildFigure(a, shapes) {
   (a.markers || []).forEach(function (m) {
     traces.push({
       type: "scatter", mode: "markers", x: [m.x], y: [m.y],
-      marker: { size: 13, color: m.color, symbol: m.sym,
-        line: { width: 1, color: "#222" } },
+      marker: { size: 16, color: m.color, symbol: m.sym,
+        line: { width: 2, color: "#ffffff" } },
       showlegend: false, hoverinfo: "text", hovertext: m.text
     });
   });

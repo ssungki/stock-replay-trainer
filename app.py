@@ -255,13 +255,16 @@ def build_review_fig(h):
     fig = go.Figure(go.Candlestick(
         x=xs, open=ch["o"], high=ch["h"], low=ch["l"], close=ch["c"],
         increasing_line_color=UP, decreasing_line_color=DOWN, name="가격"))
+    rspan = (max(ch["h"]) - min(ch["l"])) or 1.0
     for t in ch["trades"]:
         is_buy = t["type"] == "buy"
+        my = (ch["l"][t["i"]] - rspan * 0.045 if is_buy
+              else ch["h"][t["i"]] + rspan * 0.045)
         fig.add_trace(go.Scatter(
-            x=[t["i"]], y=[t["price"]], mode="markers",
-            marker=dict(size=12, color=BUY_C if is_buy else SELL_C,
+            x=[t["i"]], y=[my], mode="markers",
+            marker=dict(size=16, color=BUY_C if is_buy else SELL_C,
                         symbol="triangle-up" if is_buy else "triangle-down",
-                        line=dict(width=1, color="#222")),
+                        line=dict(width=2, color="#ffffff")),
             showlegend=False, hoverinfo="text",
             hovertext=f"{'매수' if is_buy else '매도'} {t['n']:,}주 "
                       f"@ {t['price']:,.0f}"))
@@ -510,14 +513,19 @@ xs = list(range(lo, end + 1))
 _vl, _vh = g["l"][lo:end + 1], g["h"][lo:end + 1]
 _ymin, _ymax = min(_vl), max(_vh)
 markers = []
+_span = (_ymax - _ymin) or 1.0
 for tr in g["trades"]:
     if tr["i"] < lo:
         continue
+    is_buy = tr["type"] == "buy"
+    # 마커를 캔들 밖(매수 ▲ 아래 / 매도 ▼ 위)에 띄워 캔들을 가리지 않게
+    my = (g["l"][tr["i"]] - _span * 0.045 if is_buy
+          else g["h"][tr["i"]] + _span * 0.045)
     markers.append({
-        "x": tr["i"], "y": tr["price"],
-        "sym": "triangle-up" if tr["type"] == "buy" else "triangle-down",
-        "color": BUY_C if tr["type"] == "buy" else SELL_C,
-        "text": f"{'매수' if tr['type']=='buy' else '매도'} {tr['n']:,}주 "
+        "x": tr["i"], "y": my,
+        "sym": "triangle-up" if is_buy else "triangle-down",
+        "color": BUY_C if is_buy else SELL_C,
+        "text": f"{'매수' if is_buy else '매도'} {tr['n']:,}주 "
                 f"@ {tr['price']:,.0f}",
     })
 _vol = (g.get("v") or [0.0] * len(g["c"]))[lo:end + 1]
