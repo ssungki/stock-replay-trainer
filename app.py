@@ -439,6 +439,12 @@ avg = g["cost"] / shares if shares else 0.0
 st.caption(f"종목 {st.session_state.stock_no} / {st.session_state.session_len}"
            "  ·  정체는 [정답 공개] 또는 종목 종료 시 공개")
 
+# ── 정답 (공개되면 제목 바로 밑에 표시) ──
+if g["revealed"]:
+    st.success(
+        f"**정답** — {g['name']} ({g['code']}, {g['market']})  ·  "
+        f"플레이 구간 {g['dates'][CTX - 1]} ~ {g['dates'][cur]}")
+
 # ── 지표 ──
 c1, c2, c3, c4, c5 = st.columns(5)
 c1.metric("진행", f"{played} / {g['play_n']} 봉")
@@ -494,12 +500,6 @@ with t2:
                  help="보유 주식의 선택 비율만큼 현재 종가에 매도"):
         do_sell(int(sell_pct))
         st.rerun()
-
-# ── 정답 (공개되면 차트 바로 위에 표시) ──
-if g["revealed"]:
-    st.success(
-        f"**정답** — {g['name']} ({g['code']}, {g['market']})  ·  "
-        f"플레이 구간 {g['dates'][CTX - 1]} ~ {g['dates'][cur]}")
 
 # ── 캔들차트 + 추세선 (커스텀 컴포넌트) ──
 # 추세선은 컴포넌트에서 자유롭게 그리고, 봉을 넘겨도 session_state 로 유지된다.
