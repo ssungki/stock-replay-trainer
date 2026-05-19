@@ -95,7 +95,7 @@ def record_equity():
 
 
 def new_account(play_n: int) -> bool:
-    """계좌 초기화 — 자본·수익률 기록을 리셋하고 첫 종목으로."""
+    """새 세션 시작 — 자본·기록을 리셋하고 첫 종목으로."""
     g = pick_stock(play_n)
     if not g:
         st.error("게임용 종목을 못 찾았습니다. 봉 수를 줄여보세요.")
@@ -103,6 +103,8 @@ def new_account(play_n: int) -> bool:
     st.session_state.cash = float(START_CASH)
     st.session_state.equity_log = []
     st.session_state.stock_no = 1
+    st.session_state.history = []
+    st.session_state.session_done = False
     st.session_state.game = g
     st.session_state.trendlines = []
     st.session_state.reset_token = st.session_state.get("reset_token", 0) + 1
@@ -110,11 +112,50 @@ def new_account(play_n: int) -> bool:
     return True
 
 
-def next_stock(play_n: int) -> bool:
-    """다음 종목 — 보유분을 현재가에 청산하고, 현금·수익률을 이어 새 종목으로."""
+def archive_stock(g):
+    """끝낸 종목의 매매 기록을 history 에 저장한다 (세션 분석용)."""
+    trades = g["trades"]
+    buys = [t for t in trades if t["type"] == "buy"]
+    sells = [t for t in trades if t["type"] == "sell"]
+    buy_cost = sum(t["price"] * t["n"] for t in buys)
+    sell_amt = sum(t["price"] * t["n"] for t in sells)
+    traded = bool(buys)
+    pnl = sell_amt - buy_cost if traded else 0.0
+    pnl_pct = (pnl / buy_cost * 100) if buy_cost > 0 else 0.0
+    first_buy_i = min((t["i"] for t in buys), default=None)
+    last_sell_i = max((t["i"] for t in sells), default=None)
+    hold = (last_sell_i - first_buy_i
+            if first_buy_i is not None and last_sell_i is not None else None)
+    quick = (any(s["i"] - first_buy_i <= 2 for s in sells)
+             if first_buy_i is not None else False)
+    st.session_state.history.append({
+        "name": g["name"], "code": g["code"],
+        "traded": traded, "n_trades": len(trades),
+        "pnl": pnl, "pnl_pct": pnl_pct, "hold": hold, "quick_sell": quick,
+    })
+
+
+def _close_stock():
+    """현재 종목 — 남은 보유분을 청산하고 매매 기록을 아카이브한다."""
     g = st.session_state.game
     if g["shares"] > 0:
-        st.session_state.cash += g["shares"] * cur_price()
+        p = cur_price()
+        st.session_state.cash += g["shares"] * p
+        g["trades"].append({"i": g["cur"], "type": "sell",
+                             "price": p, "n": g["shares"]})
+        g["shares"] = 0
+        g["cost"] = 0.0
+    record_equity()
+    archive_stock(g)
+
+
+def next_stock(play_n: int) -> bool:
+    """다음 종목 — 현재 종목을 마치고 자본을 이어 새 종목으로.
+    세션 마지막 종목이면 세션을 종료한다."""
+    _close_stock()
+    if st.session_state.stock_no >= int(st.session_state.session_len):
+        st.session_state.session_done = True   # 세션 종료 → 결과 리포트
+        return True
     ng = pick_stock(play_n)
     if not ng:
         st.error("다음 종목을 못 찾았습니다. 다시 눌러주세요.")
@@ -123,8 +164,78 @@ def next_stock(play_n: int) -> bool:
     st.session_state.game = ng
     st.session_state.trendlines = []
     st.session_state.reset_token = st.session_state.get("reset_token", 0) + 1
-    record_equity()
     return True
+
+
+def finish_session():
+    """지금까지 한 것만으로 세션을 즉시 종료한다 (몇 종목이든)."""
+    _close_stock()
+    st.session_state.session_done = True
+
+
+def analyze_session() -> dict:
+    """세션 전체 매매를 분석해 통계와 코칭 피드백을 만든다."""
+    hist = st.session_state.history
+    n = len(hist)
+    final = st.session_state.cash
+    total_pnl = final - START_CASH
+    total_ret = total_pnl / START_CASH * 100
+    traded = [h for h in hist if h["traded"]]
+    skipped = [h for h in hist if not h["traded"]]
+    wins = [h for h in traded if h["pnl"] > 0]
+    losses = [h for h in traded if h["pnl"] < 0]
+    win_rate = (len(wins) / len(traded) * 100) if traded else 0.0
+    avg_win = sum(h["pnl_pct"] for h in wins) / len(wins) if wins else 0.0
+    avg_loss = sum(h["pnl_pct"] for h in losses) / len(losses) if losses else 0.0
+    pl_ratio = (avg_win / abs(avg_loss)) if avg_loss < 0 else None
+    holds = [h["hold"] for h in traded if h["hold"] is not None]
+    avg_hold = sum(holds) / len(holds) if holds else None
+    best = max(traded, key=lambda h: h["pnl_pct"], default=None)
+    worst = min(traded, key=lambda h: h["pnl_pct"], default=None)
+    quick = [h for h in traded if h["quick_sell"]]
+
+    good, bad = [], []
+    if skipped:
+        bad.append(f"**기회 관망** — {n}개 중 {len(skipped)}개 종목에서 한 번도 "
+                   "매매하지 않았습니다. 진입 기준이 너무 보수적이지 않은지 보세요.")
+    if pl_ratio is not None and pl_ratio < 1:
+        bad.append(f"**손실은 크게, 수익은 작게** — 평균 수익 +{avg_win:.1f}% 대 "
+                   f"평균 손실 {avg_loss:.1f}%, 손익비 {pl_ratio:.2f}(1 미만). "
+                   "손절은 빠르게·수익은 길게 가져가는 연습이 필요합니다.")
+    if quick:
+        bad.append(f"**조급한 매도** — {len(quick)}개 종목에서 매수 2봉 안에 "
+                   "팔았습니다. 흔들림에 휘둘리는 뇌동매매 신호입니다.")
+    if losses and avg_loss <= -15:
+        bad.append(f"**손절 지연** — 손실 종목 평균이 {avg_loss:.1f}%까지 갔습니다. "
+                   "-7~10%선에서 끊는 손절 원칙을 세워보세요.")
+    if win_rate >= 60 and pl_ratio is not None and pl_ratio < 1:
+        bad.append("**자주 이기지만 크게 잃는 패턴** — 승률은 높은데 한 번의 큰 "
+                   "손실이 수익을 깎아먹습니다.")
+    if worst and worst["pnl_pct"] < 0:
+        bad.append(f"최대 손실 종목: **{worst['name']}** ({worst['pnl_pct']:+.1f}%).")
+    if not bad:
+        bad.append("뚜렷한 약점은 보이지 않습니다. 표본을 늘려 더 검증해보세요.")
+
+    if wins:
+        good.append(f"수익 종목 {len(wins)}개 · 평균 +{avg_win:.1f}%.")
+    if best and best["pnl_pct"] > 0:
+        good.append(f"베스트 거래: **{best['name']}** ({best['pnl_pct']:+.1f}%).")
+    if pl_ratio is not None and pl_ratio >= 1.5:
+        good.append(f"손익비 {pl_ratio:.2f} — 손절을 잘 지켜 이익을 키웠습니다.")
+    if win_rate < 45 and pl_ratio is not None and pl_ratio >= 1.5:
+        good.append("승률은 낮아도 손절이 단단해 손익비로 만회하는 스타일입니다.")
+    if total_ret > 0:
+        good.append(f"세션 누적 +{total_ret:.1f}% — 플러스로 마감했습니다.")
+    if not good:
+        good.append("아직 두드러진 강점은 없습니다 — 다음 세션에서 만들어봐요.")
+
+    return {
+        "n": n, "final": final, "total_pnl": total_pnl, "total_ret": total_ret,
+        "traded": len(traded), "skipped": len(skipped),
+        "wins": len(wins), "losses": len(losses), "win_rate": win_rate,
+        "avg_win": avg_win, "avg_loss": avg_loss, "pl_ratio": pl_ratio,
+        "avg_hold": avg_hold, "good": good, "bad": bad,
+    }
 
 
 def advance(k: int):
@@ -174,6 +285,9 @@ def do_sell(pct: int):
 # ─────────────── 사이드바 ───────────────
 with st.sidebar:
     st.header("⚙️ 설정")
+    st.number_input("세션 종목 수", min_value=3, max_value=30,
+                    value=15, step=1, key="session_len",
+                    help="한 세션에 플레이할 종목 수. 다 끝내면 결과 리포트가 나옵니다.")
     st.number_input("플레이 봉 수", min_value=150, max_value=500,
                     value=300, step=50, key="play_n",
                     help="한 종목당 플레이할 봉 수 (150~500).")
@@ -184,13 +298,54 @@ st.title("📊 봉 리플레이 매매 연습")
 # ─────────────── 시작 전 ───────────────
 if "game" not in st.session_state:
     st.markdown(
-        "랜덤 종목의 과거 차트를 **정체를 숨긴 채** 봅니다. **[다음 봉]**으로 "
-        "하루씩 넘기며 매수·매도 타이밍을 연습하세요.\n\n"
+        f"랜덤 종목 **{st.session_state.session_len}개**를 차례로 플레이하는 "
+        "한 세션입니다. 차트 정체를 숨긴 채 **[다음 봉]**으로 넘기며 매수·매도 "
+        "타이밍을 연습하세요.\n\n"
         "- **[몰빵 매수]** 현금 전액 매수 · **[매도]** 비율(10~100%) 분할 매도\n"
         "- **[다음 종목]** 종목을 갈아타며 자본·수익률을 **이어서 누적**\n"
-        "- **[처음부터]** 자본·수익률 초기화\n"
-        "- 차트 ✏️ 도구로 추세선을 그리고, 옮기고, 지울 수 있습니다")
-    if st.button("🎲 시작하기", type="primary"):
+        "- 세션을 다 끝내면 **매매 분석 리포트**가 나옵니다\n"
+        "- 차트를 드래그해 추세선을 그릴 수 있습니다")
+    if st.button("🎲 세션 시작", type="primary"):
+        if new_account(int(st.session_state.play_n)):
+            st.rerun()
+    st.stop()
+
+# ─────────────── 세션 종료 → 결과 리포트 ───────────────
+if st.session_state.get("session_done"):
+    a = analyze_session()
+    st.header("🏁 세션 결과")
+    st.caption(f"종목 {a['n']}개 완료")
+    m1, m2, m3 = st.columns(3)
+    m1.metric("최종 자산", f"{a['final']:,.0f} 원")
+    m2.metric("세션 수익률", f"{a['total_ret']:+.2f} %",
+              f"{a['total_pnl']:+,.0f} 원")
+    m3.metric("승률", f"{a['win_rate']:.0f} %", f"{a['wins']}승 {a['losses']}패")
+    m4, m5, m6 = st.columns(3)
+    m4.metric("매매한 종목", f"{a['traded']} / {a['n']}",
+              f"관망 {a['skipped']}개" if a['skipped'] else "전부 매매")
+    m5.metric("손익비", f"{a['pl_ratio']:.2f}" if a['pl_ratio'] is not None
+              else "—", help="평균 수익률 ÷ 평균 손실률. 1보다 크면 좋음")
+    m6.metric("평균 보유", f"{a['avg_hold']:.0f} 봉"
+              if a['avg_hold'] is not None else "—")
+
+    st.subheader("📋 매매 코칭")
+    st.markdown("**미흡했던 점**")
+    for _b in a["bad"]:
+        st.markdown(f"- {_b}")
+    st.markdown("**잘한 점**")
+    for _g in a["good"]:
+        st.markdown(f"- {_g}")
+
+    st.subheader("📑 종목별 성적")
+    st.dataframe([
+        {"#": i, "종목": h["name"],
+         "결과": "관망" if not h["traded"] else f"{h['pnl_pct']:+.1f}%",
+         "거래수": h["n_trades"],
+         "보유봉": h["hold"] if h["hold"] is not None else "-"}
+        for i, h in enumerate(st.session_state.history, 1)
+    ], hide_index=True, width="stretch")
+
+    if st.button("🔄 새 세션 시작", type="primary"):
         if new_account(int(st.session_state.play_n)):
             st.rerun()
     st.stop()
@@ -206,7 +361,8 @@ total = total_asset()
 ret = cur_return()
 avg = g["cost"] / shares if shares else 0.0
 
-st.caption(f"종목 #{st.session_state.stock_no}  ·  정체는 [정답 공개] 또는 종목 종료 시 공개")
+st.caption(f"종목 {st.session_state.stock_no} / {st.session_state.session_len}"
+           "  ·  정체는 [정답 공개] 또는 종목 종료 시 공개")
 
 # ── 지표 ──
 c1, c2, c3, c4, c5 = st.columns(5)
@@ -226,11 +382,19 @@ if b3.button("🔎 정답 공개", width="stretch", disabled=g["revealed"]):
     st.rerun()
 
 # ── 컨트롤: 종목 ──
-n1, n2 = st.columns(2)
-if n1.button("➡️ 다음 종목 (자본 이어감)", width="stretch"):
+_no = st.session_state.stock_no
+_len = int(st.session_state.session_len)
+_last = _no >= _len
+n1, n2, n3 = st.columns(3)
+if n1.button("🏁 세션 종료 · 결과 보기" if _last
+             else f"➡️ 다음 종목 ({_no}/{_len})", width="stretch"):
     if next_stock(int(st.session_state.play_n)):
         st.rerun()
-if n2.button("🔄 처음부터 (초기화)", width="stretch"):
+if n2.button("⏹ 지금 끝내기 (결과 보기)", width="stretch",
+             help="지금까지 한 종목만으로 세션을 끝내고 리포트를 봅니다"):
+    finish_session()
+    st.rerun()
+if n3.button("🔄 새 세션", width="stretch"):
     if new_account(int(st.session_state.play_n)):
         st.rerun()
 

@@ -45,7 +45,7 @@ function lineShapes(trendlines) {
   return (trendlines || []).map(function (t) {
     return { type: "line", xref: "x", yref: "y",
       x0: t.x0, y0: t.y0, x1: t.x1, y1: t.y1,
-      line: { color: ORANGE, width: 2 }, editable: true, layer: "above" };
+      line: { color: ORANGE, width: 4 }, editable: true, layer: "above" };
   });
 }
 function collectLines() {
@@ -77,7 +77,7 @@ function buildFigure(a, shapes) {
   });
   const layout = {
     height: a.height || 520, margin: { l: 10, r: 10, t: 30, b: 10 },
-    dragmode: "drawline", newshape: { line: { color: ORANGE, width: 2 } },
+    dragmode: "drawline", newshape: { line: { color: ORANGE, width: 4 } },
     shapes: shapes,
     annotations: [{ x: a.lo, y: a.price, xref: "x", yref: "y",
       text: "종가 " + Number(a.price).toLocaleString() + "원",
