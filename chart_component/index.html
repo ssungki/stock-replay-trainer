@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8"/>
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js" charset="utf-8"></script>
+<style>
+  html, body { margin: 0; padding: 0;
+    font-family: -apple-system, "Segoe UI", "Malgun Gothic", sans-serif; }
+  #chart { width: 100%; }
+  #tools { display: flex; flex-wrap: wrap; align-items: center;
+    gap: 6px; padding: 6px 8px 2px; font-size: 13px; color: #444; }
+  #tools .hint { color: #888; }
+  .chip { display: inline-flex; align-items: center; gap: 5px;
+    background: #fff4e0; border: 1px solid #ffcf87; border-radius: 14px;
+    padding: 3px 6px 3px 10px; color: #b35e00; }
+  .chip button { border: none; background: #ffb648; color: #fff;
+    border-radius: 50%; width: 17px; height: 17px; line-height: 17px;
+    font-size: 12px; cursor: pointer; padding: 0; }
+  .chip button:hover { background: #ff9500; }
+  #clearall { border: 1px solid #ddd; background: #f6f6f6; border-radius: 14px;
+    padding: 4px 11px; cursor: pointer; color: #555; }
+  #clearall:hover { background: #eee; }
+</style>
+</head>
+<body>
+<div id="chart"></div>
+<div id="tools"></div>
+<script>
+"use strict";
+const ORANGE = "#ff9500";
+let gd = document.getElementById("chart");
+let toolsEl = document.getElementById("tools");
+let bound = false;
+let initialized = false;     // 최초 렌더 여부
+let lastReset = null;        // 종목 리셋 토큰 (바뀌면 추세선 초기화)
+
+function post(type, extra) {
+  window.parent.postMessage(
+    Object.assign({ isStreamlitMessage: true, type: type }, extra || {}), "*");
+}
+function setValue(v) { post("streamlit:setComponentValue", { value: v, dataType: "json" }); }
+function setHeight(h) { post("streamlit:setFrameHeight", { height: h }); }
+
+function lineShapes(trendlines) {
+  return (trendlines || []).map(function (t) {
+    return { type: "line", xref: "x", yref: "y",
+      x0: t.x0, y0: t.y0, x1: t.x1, y1: t.y1,
+      line: { color: ORANGE, width: 2 }, editable: true, layer: "above" };
+  });
+}
+function collectLines() {
+  return (gd.layout.shapes || [])
+    .filter(function (s) { return s.type === "line"; })
+    .map(function (s) { return { x0: s.x0, y0: s.y0, x1: s.x1, y1: s.y1 }; });
+}
+
+function buildFigure(a, shapes) {
+  const traces = [{
+    type: "candlestick", x: a.x, open: a.o, high: a.h, low: a.l, close: a.c,
+    increasing: { line: { color: a.up }, fillcolor: a.up },
+    decreasing: { line: { color: a.down }, fillcolor: a.down },
+    name: "가격", showlegend: false
+  }, {
+    type: "scatter", mode: "lines", x: [a.cur, a.cur], y: [a.ymin, a.ymax],
+    line: { color: "#aaa", width: 1, dash: "dot" }, showlegend: false, hoverinfo: "skip"
+  }, {
+    type: "scatter", mode: "lines", x: [a.lo, a.end], y: [a.price, a.price],
+    line: { color: "#777", width: 1, dash: "dash" }, showlegend: false, hoverinfo: "skip"
+  }];
+  (a.markers || []).forEach(function (m) {
+    traces.push({
+      type: "scatter", mode: "markers", x: [m.x], y: [m.y],
+      marker: { size: 13, color: m.color, symbol: m.sym,
+        line: { width: 1, color: "#222" } },
+      showlegend: false, hoverinfo: "text", hovertext: m.text
+    });
+  });
+  const layout = {
+    height: a.height || 520, margin: { l: 10, r: 10, t: 30, b: 10 },
+    dragmode: "drawline", newshape: { line: { color: ORANGE, width: 2 } },
+    shapes: shapes,
+    annotations: [{ x: a.lo, y: a.price, xref: "x", yref: "y",
+      text: "종가 " + Number(a.price).toLocaleString() + "원",
+      showarrow: false, xanchor: "left", yanchor: "bottom",
+      font: { size: 13, color: "#222" } }],
+    xaxis: { rangeslider: { visible: false }, showticklabels: false,
+      title: "(봉 번호 숨김)" },
+    yaxis: { tickformat: ",.0f", ticksuffix: "원", automargin: true },
+    showlegend: false
+  };
+  return { traces: traces, layout: layout };
+}
+
+function pushState() {
+  renderTools();
+  setValue({ lines: collectLines() });
+}
+function deleteLine(idx) {
+  const shapes = (gd.layout.shapes || []).slice();
+  console.log("deleteLine", idx, "of", shapes.length);
+  if (idx < 0 || idx >= shapes.length) return;
+  shapes.splice(idx, 1);
+  Plotly.relayout(gd, { shapes: shapes }).then(pushState);
+}
+function clearAll() { Plotly.relayout(gd, { shapes: [] }).then(pushState); }
+
+function renderTools() {
+  const lines = collectLines();
+  toolsEl.innerHTML = "";
+  if (lines.length === 0) {
+    const h = document.createElement("span");
+    h.className = "hint";
+    h.textContent = "추세선 — 차트를 드래그해 그립니다 · 봉을 넘겨도 유지돼요 · 아래 ✕로 하나씩 삭제";
+    toolsEl.appendChild(h);
+    return;
+  }
+  const lab = document.createElement("span");
+  lab.textContent = "추세선:";
+  toolsEl.appendChild(lab);
+  lines.forEach(function (_, i) {
+    const chip = document.createElement("span");
+    chip.className = "chip";
+    chip.appendChild(document.createTextNode("선 " + (i + 1)));
+    const x = document.createElement("button");
+    x.textContent = "✕";
+    x.title = "이 추세선 삭제";
+    x.onclick = function () { deleteLine(i); };
+    chip.appendChild(x);
+    toolsEl.appendChild(chip);
+  });
+  const ca = document.createElement("button");
+  ca.id = "clearall";
+  ca.textContent = "전체 삭제";
+  ca.onclick = clearAll;
+  toolsEl.appendChild(ca);
+}
+
+function render(a) {
+  // 추세선 결정 — 최초 로드/종목 리셋 때만 Python 값을 쓰고,
+  // 그 외(봉 전진 등 일반 리렌더)에는 프론트의 현재 추세선을 그대로 유지한다.
+  let shapes;
+  if (!initialized || a.resetToken !== lastReset) {
+    shapes = lineShapes(a.trendlines);
+    lastReset = a.resetToken;
+    initialized = true;
+  } else {
+    shapes = (gd.layout && gd.layout.shapes ? gd.layout.shapes : []).slice();
+  }
+  const f = buildFigure(a, shapes);
+  const config = {
+    displaylogo: false, scrollZoom: true, responsive: true,
+    modeBarButtonsToAdd: ["drawline", "eraseshape"]
+  };
+  Plotly.react(gd, f.traces, f.layout, config);
+  if (!bound) {
+    bound = true;
+    gd.on("plotly_relayout", function (ev) {
+      const keys = Object.keys(ev || {});
+      const shapeChange = keys.some(function (k) {
+        return k === "shapes" || k.indexOf("shapes[") === 0;
+      });
+      if (!shapeChange) return;
+      renderTools();
+      setValue({ lines: collectLines() });
+    });
+  }
+  renderTools();
+  setHeight((a.height || 520) + 52);
+}
+
+window.addEventListener("message", function (e) {
+  const d = e.data;
+  if (!d || d.type !== "streamlit:render") return;
+  render(d.args || {});
+});
+
+post("streamlit:componentReady", { apiVersion: 1 });
+</script>
+</body>
+</html>

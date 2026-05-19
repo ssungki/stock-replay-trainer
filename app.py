@@ -8,12 +8,18 @@
 """
 import datetime as dt
 import random
+from pathlib import Path
 
 import FinanceDataReader as fdr
 import plotly.graph_objects as go
 import streamlit as st
+import streamlit.components.v1 as components
 
 st.set_page_config(page_title="봉 리플레이 매매 연습", page_icon="📊", layout="wide")
+
+# 캔들차트 + 추세선 커스텀 컴포넌트 (자유 그리기 + 봉 전진 후에도 유지 + 개별 삭제)
+_replay_chart = components.declare_component(
+    "replay_chart", path=str(Path(__file__).parent / "chart_component"))
 
 START_CASH = 10_000_000   # 시작 자본 (원)
 CTX = 200                 # 시작 시 보여줄 과거 봉 수
@@ -98,6 +104,8 @@ def new_account(play_n: int) -> bool:
     st.session_state.equity_log = []
     st.session_state.stock_no = 1
     st.session_state.game = g
+    st.session_state.trendlines = []
+    st.session_state.reset_token = st.session_state.get("reset_token", 0) + 1
     record_equity()
     return True
 
@@ -113,6 +121,8 @@ def next_stock(play_n: int) -> bool:
         return False
     st.session_state.stock_no += 1
     st.session_state.game = ng
+    st.session_state.trendlines = []
+    st.session_state.reset_token = st.session_state.get("reset_token", 0) + 1
     record_equity()
     return True
 
@@ -242,61 +252,35 @@ with t2:
         do_sell(int(sell_pct))
         st.rerun()
 
-# ── 추세선 (자유 드로잉) ──
-st.session_state.setdefault("trend_clear", 0)
-
-# ── 캔들차트 ──
+# ── 캔들차트 + 추세선 (커스텀 컴포넌트) ──
+# 추세선은 컴포넌트에서 자유롭게 그리고, 봉을 넘겨도 session_state 로 유지된다.
+st.session_state.setdefault("trendlines", [])
 end = last if g["revealed"] else cur
 lo = max(0, end - PLOT_WINDOW)
 xs = list(range(lo, end + 1))
-fig = go.Figure(go.Candlestick(
-    x=xs, open=g["o"][lo:end + 1], high=g["h"][lo:end + 1],
-    low=g["l"][lo:end + 1], close=g["c"][lo:end + 1],
-    increasing_line_color=UP, decreasing_line_color=DOWN, name="가격"))
+_vl, _vh = g["l"][lo:end + 1], g["h"][lo:end + 1]
+_ymin, _ymax = min(_vl), max(_vh)
+markers = []
 for tr in g["trades"]:
     if tr["i"] < lo:
         continue
-    fig.add_trace(go.Scatter(
-        x=[tr["i"]], y=[tr["price"]], mode="markers",
-        marker=dict(size=13, color=BUY_C if tr["type"] == "buy" else SELL_C,
-                    symbol="triangle-up" if tr["type"] == "buy" else "triangle-down",
-                    line=dict(width=1, color="#222")),
-        showlegend=False, hoverinfo="text",
-        hovertext=f"{'매수' if tr['type']=='buy' else '매도'} {tr['n']:,}주 "
-                  f"@ {tr['price']:,.0f}"))
-# 현재봉 표시선·종가선은 layout.shapes 가 아닌 트레이스로 그린다.
-# (shapes 로 그리면 봉을 전진할 때 사용자가 그린 추세선까지 함께 지워진다)
-_vh = g["h"][lo:end + 1]
-_vl = g["l"][lo:end + 1]
-_ymin, _ymax = min(_vl), max(_vh)
-fig.add_trace(go.Scatter(
-    x=[cur, cur], y=[_ymin, _ymax], mode="lines",
-    line=dict(color="#aaa", width=1, dash="dot"),
-    showlegend=False, hoverinfo="skip"))
-fig.add_trace(go.Scatter(
-    x=[lo, end], y=[price, price], mode="lines",
-    line=dict(color="#777", width=1, dash="dash"),
-    showlegend=False, hoverinfo="skip"))
-fig.add_annotation(x=lo, y=price, text=f"종가 {price:,.0f}원",
-                   showarrow=False, xanchor="left", yanchor="bottom",
-                   font=dict(size=13, color="#222"))
-fig.update_layout(
-    height=520, margin=dict(l=10, r=10, t=30, b=10),
-    dragmode="pan", newshape=dict(line=dict(color="#ff9500", width=2)),
-    uirevision=f"{g['uirev']}-{st.session_state.trend_clear}",
-    xaxis=dict(rangeslider=dict(visible=False), showticklabels=False,
-               title="(봉 번호 숨김)"),
-    yaxis=dict(tickformat=",.0f", ticksuffix="원"),
-    showlegend=False)
-st.plotly_chart(fig, width="stretch", key="replaychart", config={
-    "modeBarButtonsToAdd": ["drawline"],
-    "displaylogo": False, "scrollZoom": True})
-tc1, tc2 = st.columns([3, 1])
-tc1.caption("추세선 — 차트 우상단 ✏️ 도구로 자유롭게 그립니다. 봉을 넘겨도 유지돼요. "
-            "지울 땐 오른쪽 [추세선 모두 지우기].")
-if tc2.button("🧹 추세선 모두 지우기", width="stretch"):
-    st.session_state.trend_clear += 1
-    st.rerun()
+    markers.append({
+        "x": tr["i"], "y": tr["price"],
+        "sym": "triangle-up" if tr["type"] == "buy" else "triangle-down",
+        "color": BUY_C if tr["type"] == "buy" else SELL_C,
+        "text": f"{'매수' if tr['type']=='buy' else '매도'} {tr['n']:,}주 "
+                f"@ {tr['price']:,.0f}",
+    })
+chart_val = _replay_chart(
+    x=xs, o=g["o"][lo:end + 1], h=g["h"][lo:end + 1],
+    l=g["l"][lo:end + 1], c=g["c"][lo:end + 1],
+    markers=markers, cur=cur, lo=lo, end=end, price=price,
+    ymin=_ymin, ymax=_ymax, up=UP, down=DOWN,
+    trendlines=st.session_state.trendlines,
+    resetToken=st.session_state.get("reset_token", 0), height=520,
+    key="replaychart", default=None)
+if isinstance(chart_val, dict) and "lines" in chart_val:
+    st.session_state.trendlines = chart_val["lines"]
 
 # ── 수익률 추이 (매수·매도 시점에만 기록) ──
 st.subheader("📈 내 수익률 추이 (매매 시점 기준)")
