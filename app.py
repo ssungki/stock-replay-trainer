@@ -44,12 +44,21 @@ def load_history(code: str):
     return fdr.DataReader(code, start)
 
 
-def pick_stock(play_n: int):
-    """랜덤 종목·시점으로 새 게임 dict를 만든다 (계좌 현금과 무관)."""
+@st.cache_resource
+def leaderboard_store():
+    """대회 순위표 — 앱 인스턴스의 모든 접속자가 공유하는 인메모리 저장소.
+    형태: {대회코드: [{team, ret, asset, ts}, ...]}  (앱 재배포 시 초기화)"""
+    return {}
+
+
+def pick_stock(play_n: int, rng=None):
+    """랜덤 종목·시점으로 새 게임 dict를 만든다 (계좌 현금과 무관).
+    rng 를 주면(대회 모드) 그 시드로 종목 선택이 재현 가능해진다."""
+    rnd = rng if rng is not None else random
     listing = load_listing()
     need = CTX + play_n
     for _ in range(40):
-        row = listing.sample(1).iloc[0]
+        row = listing.iloc[rnd.randrange(len(listing))]
         df = load_history(row["Code"])
         if df is None or df.empty:
             continue
@@ -58,7 +67,7 @@ def pick_stock(play_n: int):
         df = df[(df[["Open", "High", "Low", "Close"]] > 0).all(axis=1)]
         if len(df) < need + 5:
             continue
-        s = random.randint(0, len(df) - need)
+        s = rnd.randint(0, len(df) - need)
         w = df.iloc[s:s + need]
         # 표시 구간 안에 비정상 급변(전봉 대비 ±70% 초과)이 있으면 다른 종목으로
         cl = w["Close"].to_numpy()
@@ -99,11 +108,32 @@ def record_equity():
 
 
 def new_account(play_n: int) -> bool:
-    """새 세션 시작 — 자본·기록을 리셋하고 첫 종목으로."""
-    g = pick_stock(play_n)
-    if not g:
-        st.error("게임용 종목을 못 찾았습니다. 봉 수를 줄여보세요.")
-        return False
+    """새 세션 시작 — 자본·기록을 리셋하고 첫 종목으로.
+    대회 코드가 있으면 그 시드로 세션 전체 종목을 고정 생성한다."""
+    contest = st.session_state.get("pending_contest")
+    session_len = int(st.session_state.session_len)
+    if contest and contest.get("code"):
+        rng = random.Random("stockreplay::" + contest["code"])
+        games = []
+        with st.spinner("대회 종목 준비 중... (처음 한 번만 시간이 걸립니다)"):
+            for _ in range(session_len):
+                sg = pick_stock(play_n, rng=rng)
+                if not sg:
+                    st.error("대회 종목을 만들지 못했습니다. 봉 수를 줄여보세요.")
+                    return False
+                games.append(sg)
+        st.session_state.contest = {"team": contest.get("team") or "익명",
+                                    "code": contest["code"]}
+        st.session_state.contest_games = games
+        g = games[0]
+    else:
+        g = pick_stock(play_n)
+        if not g:
+            st.error("게임용 종목을 못 찾았습니다. 봉 수를 줄여보세요.")
+            return False
+        st.session_state.contest = None
+        st.session_state.contest_games = None
+    st.session_state.contest_submitted = False
     st.session_state.cash = float(START_CASH)
     st.session_state.equity_log = []
     st.session_state.stock_no = 1
@@ -159,17 +189,27 @@ def _close_stock():
     archive_stock(g)
 
 
+def session_len_eff() -> int:
+    """이번 세션의 종목 수 — 대회 모드면 고정 생성된 종목 수, 아니면 설정값."""
+    cg = st.session_state.get("contest_games")
+    return len(cg) if cg else int(st.session_state.session_len)
+
+
 def next_stock(play_n: int) -> bool:
     """다음 종목 — 현재 종목을 마치고 자본을 이어 새 종목으로.
     세션 마지막 종목이면 세션을 종료한다."""
     _close_stock()
-    if st.session_state.stock_no >= int(st.session_state.session_len):
+    if st.session_state.stock_no >= session_len_eff():
         st.session_state.session_done = True   # 세션 종료 → 결과 리포트
         return True
-    ng = pick_stock(play_n)
-    if not ng:
-        st.error("다음 종목을 못 찾았습니다. 다시 눌러주세요.")
-        return False
+    cg = st.session_state.get("contest_games")
+    if cg:                                     # 대회 — 미리 고정한 종목 사용
+        ng = cg[st.session_state.stock_no]
+    else:
+        ng = pick_stock(play_n)
+        if not ng:
+            st.error("다음 종목을 못 찾았습니다. 다시 눌러주세요.")
+            return False
     st.session_state.stock_no += 1
     st.session_state.game = ng
     st.session_state.trendlines = []
@@ -351,7 +391,18 @@ if "game" not in st.session_state:
         "- **[다음 종목]** 종목을 갈아타며 자본·수익률을 **이어서 누적**\n"
         "- 세션을 다 끝내면 **매매 분석 리포트**가 나옵니다\n"
         "- 차트를 드래그해 추세선을 그릴 수 있습니다")
+    with st.expander("🏆 대회 모드로 참가 (여러 팀이 같은 종목으로 대결)"):
+        st.text_input("팀 이름", key="in_team", placeholder="예: 1팀 / 홍길동")
+        st.text_input("대회 코드", key="in_code",
+                      placeholder="대회 코드 입력 (없으면 혼자 연습)",
+                      help="같은 대회 코드를 넣은 팀끼리 똑같은 종목으로 대결하고, "
+                           "세션을 마치면 순위표에 자동 등록됩니다.")
+        st.caption("대회 참가자는 모두 같은 코드 + 같은 사이드바 설정을 쓰세요.")
     if st.button("🎲 세션 시작", type="primary"):
+        _code = (st.session_state.get("in_code") or "").strip()
+        _team = (st.session_state.get("in_team") or "").strip()
+        st.session_state.pending_contest = ({"team": _team, "code": _code}
+                                            if _code else None)
         if new_account(int(st.session_state.play_n)):
             st.rerun()
     st.stop()
@@ -373,6 +424,29 @@ if st.session_state.get("session_done"):
               else "—", help="평균 수익률 ÷ 평균 손실률. 1보다 크면 좋음")
     m6.metric("평균 보유", f"{a['avg_hold']:.0f} 봉"
               if a['avg_hold'] is not None else "—")
+
+    # ── 대회 순위표 ──
+    _contest = st.session_state.get("contest")
+    if _contest:
+        _lb = leaderboard_store()
+        _entries = _lb.setdefault(_contest["code"], [])
+        if not st.session_state.get("contest_submitted"):
+            _entries.append({
+                "team": _contest["team"], "ret": a["total_ret"],
+                "asset": a["final"],
+                "ts": dt.datetime.now().strftime("%m-%d %H:%M")})
+            st.session_state.contest_submitted = True
+        _ranked = sorted(_entries, key=lambda x: x["ret"], reverse=True)
+        st.subheader(f"🏆 대회 순위표 — 코드 「{_contest['code']}」")
+        st.dataframe([
+            {"순위": i, "팀": e["team"], "수익률": f"{e['ret']:+.2f}%",
+             "최종자산": f"{e['asset']:,.0f}원", "기록": e["ts"]}
+            for i, e in enumerate(_ranked, 1)
+        ], hide_index=True, width="stretch")
+        st.caption(f"내 팀 **{_contest['team']}** · 같은 코드로 참가한 다른 팀이 "
+                   "세션을 마칠 때마다 순위가 갱신됩니다 (앱 재배포 시 초기화).")
+        if st.button("🔄 순위표 새로고침"):
+            st.rerun()
 
     st.subheader("📋 매매 코칭")
     st.markdown("**미흡했던 점**")
@@ -424,8 +498,9 @@ if st.session_state.get("session_done"):
                        mime="text/html")
 
     if st.button("🔄 새 세션 시작", type="primary"):
-        if new_account(int(st.session_state.play_n)):
-            st.rerun()
+        for _k in ("game", "session_done"):
+            st.session_state.pop(_k, None)
+        st.rerun()
     st.stop()
 
 g = st.session_state.game
@@ -439,12 +514,15 @@ total = total_asset()
 ret = cur_return()
 avg = g["cost"] / shares if shares else 0.0
 
-st.caption(f"종목 {st.session_state.stock_no} / {st.session_state.session_len}"
-           "  ·  정체는 [정답 공개] 또는 종목 종료 시 공개")
+_no = st.session_state.stock_no
+_len = session_len_eff()
+_contest_now = st.session_state.get("contest")
+_tag = f"  ·  🏆 대회 [{_contest_now['code']}] · {_contest_now['team']}" \
+    if _contest_now else ""
+st.caption(f"종목 {_no} / {_len}"
+           f"  ·  정체는 [정답 공개] 또는 종목 종료 시 공개{_tag}")
 
 # ── 컨트롤: 종목 (제목 바로 밑) ──
-_no = st.session_state.stock_no
-_len = int(st.session_state.session_len)
 _last = _no >= _len
 n1, n2, n3 = st.columns(3)
 if n1.button("🏁 세션 종료 · 결과 보기" if _last
@@ -455,9 +533,11 @@ if n2.button("⏹ 지금 끝내기 (결과 보기)", width="stretch",
              help="지금까지 한 종목만으로 세션을 끝내고 리포트를 봅니다"):
     finish_session()
     st.rerun()
-if n3.button("🔄 새 세션", width="stretch"):
-    if new_account(int(st.session_state.play_n)):
-        st.rerun()
+if n3.button("🔄 새 세션", width="stretch",
+             help="시작 화면으로 — 혼자 연습/대회 모드를 다시 고를 수 있습니다"):
+    for _k in ("game", "session_done"):
+        st.session_state.pop(_k, None)
+    st.rerun()
 
 # ── 지표 ──
 c1, c2, c3, c4, c5 = st.columns(5)
