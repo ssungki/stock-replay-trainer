@@ -602,15 +602,28 @@ if g["revealed"]:
 # ── 캔들차트 + 추세선 (커스텀 컴포넌트) ──
 # 추세선은 컴포넌트에서 자유롭게 그리고, 봉을 넘겨도 session_state 로 유지된다.
 st.session_state.setdefault("trendlines", [])
+st.session_state.setdefault("view_all", False)
 end = last if g["revealed"] else cur
-lo = max(0, end - PLOT_WINDOW)
-xs = list(range(lo, end + 1))
-_vl, _vh = g["l"][lo:end + 1], g["h"][lo:end + 1]
+# 차트 보기 범위 — 기본은 최근 PLOT_WINDOW봉(슬라이딩, 봉 크기 일정),
+# [전체 보기] 누르면 지금까지 본 모든 봉을 한 번에 표시.
+view_lo = 0 if st.session_state.view_all else max(0, end - PLOT_WINDOW + 1)
+xs = list(range(view_lo, end + 1))
+_vl = g["l"][view_lo:end + 1]
+_vh = g["h"][view_lo:end + 1]
 _ymin, _ymax = min(_vl), max(_vh)
-markers = []
 _span = (_ymax - _ymin) or 1.0
+# 보이는 구간의 최고·최저점 마킹용
+_hi_off = _vh.index(_ymax)
+_lo_off = _vl.index(_ymin)
+peaks = [
+    {"x": view_lo + _hi_off, "y": _ymax,
+     "label": f"최고 {_ymax:,.0f}원", "kind": "high"},
+    {"x": view_lo + _lo_off, "y": _ymin,
+     "label": f"최저 {_ymin:,.0f}원", "kind": "low"},
+]
+markers = []
 for tr in g["trades"]:
-    if tr["i"] < lo:
+    if tr["i"] < view_lo:
         continue
     is_buy = tr["type"] == "buy"
     # 마커를 캔들 밖(매수 ▲ 아래 / 매도 ▼ 위)에 띄워 캔들을 가리지 않게
@@ -623,11 +636,24 @@ for tr in g["trades"]:
         "text": f"{'매수' if is_buy else '매도'} {tr['n']:,}주 "
                 f"@ {tr['price']:,.0f}",
     })
-_vol = (g.get("v") or [0.0] * len(g["c"]))[lo:end + 1]
+_vol = (g.get("v") or [0.0] * len(g["c"]))[view_lo:end + 1]
+
+# 보기 모드 토글 (차트 위)
+_v1, _v2 = st.columns([4, 1])
+_visible_n = end - view_lo + 1
+_v1.caption(("📊 전체 보기" if st.session_state.view_all
+             else f"📊 최근 {_visible_n}봉 (지난 봉은 [전체 보기])"))
+_btn_label = ("🎯 최근 200봉으로" if st.session_state.view_all
+              else "🔍 전체 보기")
+if _v2.button(_btn_label, width="stretch", key="toggle_view"):
+    st.session_state.view_all = not st.session_state.view_all
+    st.rerun()
+
 chart_val = _replay_chart(
-    x=xs, o=g["o"][lo:end + 1], h=g["h"][lo:end + 1],
-    l=g["l"][lo:end + 1], c=g["c"][lo:end + 1], v=_vol,
-    markers=markers, cur=cur, lo=lo, end=end, price=price,
+    x=xs, o=g["o"][view_lo:end + 1], h=g["h"][view_lo:end + 1],
+    l=g["l"][view_lo:end + 1], c=g["c"][view_lo:end + 1], v=_vol,
+    markers=markers, peaks=peaks,
+    cur=cur, lo=view_lo, end=end, price=price,
     ymin=_ymin, ymax=_ymax, up=UP, down=DOWN,
     trendlines=st.session_state.trendlines,
     resetToken=st.session_state.get("reset_token", 0), height=560,

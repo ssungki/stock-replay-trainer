@@ -69,9 +69,6 @@ function buildFigure(a, shapes) {
     type: "scatter", mode: "lines", x: [a.cur, a.cur], y: [a.ymin, a.ymax],
     line: { color: "#aaa", width: 1, dash: "dot" }, showlegend: false, hoverinfo: "skip"
   }, {
-    type: "scatter", mode: "lines", x: [a.lo, a.end], y: [a.price, a.price],
-    line: { color: "#777", width: 1, dash: "dash" }, showlegend: false, hoverinfo: "skip"
-  }, {
     type: "bar", x: a.x, y: vol, yaxis: "y2",
     marker: { color: vColors }, opacity: 0.5,
     showlegend: false, hoverinfo: "skip", name: "거래량"
@@ -88,13 +85,26 @@ function buildFigure(a, shapes) {
     height: a.height || 560, margin: { l: 10, r: 10, t: 30, b: 10 },
     dragmode: "drawline", newshape: { line: { color: ORANGE, width: 4 } },
     shapes: shapes,
-    annotations: [{ x: a.lo, y: a.price, xref: "x", yref: "y",
-      text: "종가 " + Number(a.price).toLocaleString() + "원",
-      showarrow: false, xanchor: "left", yanchor: "bottom",
-      font: { size: 13, color: "#222" } }, {
-      xref: "paper", yref: "paper", x: 0, y: 0.205,
-      text: "거래량", showarrow: false, xanchor: "left", yanchor: "bottom",
-      font: { size: 11, color: "#999" } }],
+    annotations: [
+      { xref: "paper", yref: "paper", x: 0, y: 0.205,
+        text: "거래량", showarrow: false, xanchor: "left", yanchor: "bottom",
+        font: { size: 11, color: "#999" } },
+      // 보이는 구간 최고·최저 표시
+      ...((a.peaks || []).map(function (p) {
+        const isHi = p.kind === "high";
+        return {
+          x: p.x, y: p.y, xref: "x", yref: "y",
+          text: p.label,
+          showarrow: true, arrowhead: 2, arrowsize: 1, arrowwidth: 1.5,
+          arrowcolor: isHi ? "#c62828" : "#1565c0",
+          ax: 0, ay: isHi ? -32 : 32,
+          font: { size: 13, color: isHi ? "#c62828" : "#1565c0" },
+          bgcolor: "rgba(255,255,255,0.88)",
+          bordercolor: isHi ? "#c62828" : "#1565c0",
+          borderwidth: 1, borderpad: 3
+        };
+      }))
+    ],
     xaxis: { rangeslider: { visible: false }, showticklabels: false,
       title: "(봉 번호 숨김)", anchor: "y2" },
     yaxis: { tickformat: ",.0f", ticksuffix: "원", automargin: true,
