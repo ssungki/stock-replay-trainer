@@ -28,7 +28,7 @@ PLOT_WINDOW = 200         # 캔들차트에 그릴 최근 봉 수 (슬라이딩 
 
 UP, DOWN = "#e84a5f", "#3d6bb3"
 BUY_C, SELL_C = "#16c79a", "#ffa502"
-MAX_ENTRIES = 3           # 한 종목당 매수(진입) 최대 횟수
+MAX_ENTRIES = 10          # 한 종목당 매수(진입) 최대 횟수
 
 
 @st.cache_data(ttl=86400, show_spinner="종목 목록 불러오는 중...")
