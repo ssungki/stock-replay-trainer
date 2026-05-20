@@ -24,7 +24,7 @@ _replay_chart = components.declare_component(
 START_CASH = 10_000_000   # 시작 자본 (원)
 CTX = 200                 # 시작 시 보여줄 과거 봉 수
 HIST_YEARS = 15           # 종목당 가져올 과거 데이터 길이 (년)
-PLOT_WINDOW = 600         # 캔들차트에 그릴 최근 봉 수
+PLOT_WINDOW = 200         # 캔들차트에 그릴 최근 봉 수 (슬라이딩 윈도우 — 봉 크기 고정)
 
 UP, DOWN = "#e84a5f", "#3d6bb3"
 BUY_C, SELL_C = "#16c79a", "#ffa502"
