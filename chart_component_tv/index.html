@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8"/>
+<script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
+<style>
+  html, body { margin: 0; padding: 0;
+    font-family: -apple-system, "Segoe UI", "Malgun Gothic", sans-serif;
+    background: #ffffff; }
+  #wrap { width: 100%; padding-top: 4px; }
+  #chart { width: 100%; }
+  #hint { padding: 6px 8px 2px; font-size: 12px; color: #888; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="chart"></div>
+  <div id="hint">TradingView 엔진 · 휠로 줌, 드래그로 팬</div>
+</div>
+<script>
+"use strict";
+let chart = null;
+let candleSeries = null;
+let volSeries = null;
+let lastResetToken = null;
+let lastVisibleN = null;
+
+function post(type, extra) {
+  window.parent.postMessage(
+    Object.assign({ isStreamlitMessage: true, type: type }, extra || {}), "*");
+}
+function setHeight(h) { post("streamlit:setFrameHeight", { height: h }); }
+
+function ensureChart(W, H) {
+  const el = document.getElementById("chart");
+  if (chart) {
+    chart.applyOptions({ width: W, height: H });
+    return;
+  }
+  chart = LightweightCharts.createChart(el, {
+    width: W, height: H,
+    layout: {
+      textColor: "#222",
+      background: { type: "solid", color: "#ffffff" },
+      fontFamily: "-apple-system, sans-serif"
+    },
+    grid: {
+      vertLines: { color: "#eef0f3" },
+      horzLines: { color: "#eef0f3" }
+    },
+    rightPriceScale: {
+      borderColor: "#cdd2da",
+      scaleMargins: { top: 0.06, bottom: 0.25 }
+    },
+    timeScale: {
+      borderColor: "#cdd2da",
+      timeVisible: false,
+      secondsVisible: false,
+      rightOffset: 4
+    },
+    crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+    handleScale: { axisPressedMouseMove: true, mouseWheel: true, pinch: true },
+    handleScroll: { mouseWheel: true, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: true }
+  });
+  candleSeries = chart.addCandlestickSeries({
+    upColor: "#e84a5f", downColor: "#3d6bb3",
+    wickUpColor: "#e84a5f", wickDownColor: "#3d6bb3",
+    borderVisible: false
+  });
+  // 거래량 — 메인 가격축과 분리된 오버레이 스케일, 차트 하단에만 표시
+  volSeries = chart.addHistogramSeries({
+    priceFormat: { type: "volume" },
+    priceScaleId: "",
+    scaleMargins: { top: 0.82, bottom: 0 }
+  });
+}
+
+function render(a) {
+  const W = Math.max(320, window.innerWidth - 4);
+  const H = a.height || 560;
+  ensureChart(W, H);
+
+  const dates = a.dates || [];
+  const candleData = dates.map((d, i) => ({
+    time: d, open: a.o[i], high: a.h[i], low: a.l[i], close: a.c[i]
+  }));
+  candleSeries.setData(candleData);
+
+  const volData = dates.map((d, i) => ({
+    time: d, value: (a.v || [])[i] || 0,
+    color: (a.c[i] >= a.o[i]) ? "rgba(232,74,95,0.55)" : "rgba(61,107,179,0.55)"
+  }));
+  volSeries.setData(volData);
+
+  // 마커 — 매수/매도 화살표 + 최고/최저 정사각 라벨
+  const markers = [];
+  (a.markers || []).forEach((m) => {
+    if (m.x < 0 || m.x >= dates.length) return;
+    const isBuy = (m.sym || "").indexOf("up") >= 0;
+    markers.push({
+      time: dates[m.x],
+      position: isBuy ? "belowBar" : "aboveBar",
+      color: m.color,
+      shape: isBuy ? "arrowUp" : "arrowDown",
+      text: isBuy ? "매수" : "매도"
+    });
+  });
+  (a.peaks || []).forEach((p) => {
+    if (p.x < 0 || p.x >= dates.length) return;
+    markers.push({
+      time: dates[p.x],
+      position: p.kind === "high" ? "aboveBar" : "belowBar",
+      color: p.kind === "high" ? "#c62828" : "#1565c0",
+      shape: "square",
+      text: p.label,
+      size: 0
+    });
+  });
+  // lightweight-charts 는 markers 가 time 순서로 정렬돼야 함
+  markers.sort((x, y) => (x.time < y.time ? -1 : x.time > y.time ? 1 : 0));
+  candleSeries.setMarkers(markers);
+
+  // 보이는 범위 — viewAll 이면 전체, 아니면 최근 PLOT_WINDOW(=a.window)봉
+  const n = dates.length;
+  if (a.viewAll) {
+    chart.timeScale().fitContent();
+  } else {
+    const win = a.window || 200;
+    const from = Math.max(0, n - win);
+    chart.timeScale().setVisibleLogicalRange({ from: from, to: n - 1 });
+  }
+  lastVisibleN = n;
+  lastResetToken = a.resetToken;
+  setHeight(H + 26);    // 차트 + 힌트
+}
+
+window.addEventListener("message", (e) => {
+  const d = e.data;
+  if (!d || d.type !== "streamlit:render") return;
+  render(d.args || {});
+});
+window.addEventListener("resize", () => {
+  if (chart) chart.applyOptions({ width: Math.max(320, window.innerWidth - 4) });
+});
+
+post("streamlit:componentReady", { apiVersion: 1 });
+</script>
+</body>
+</html>

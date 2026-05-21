@@ -20,6 +20,9 @@ st.set_page_config(page_title="봉 리플레이 매매 연습", page_icon="📊"
 # 캔들차트 + 추세선 커스텀 컴포넌트 (자유 그리기 + 봉 전진 후에도 유지 + 개별 삭제)
 _replay_chart = components.declare_component(
     "replay_chart", path=str(Path(__file__).parent / "chart_component"))
+# 트뷰 룩&필 컴포넌트 (lightweight-charts) — 추세선 그리기 없음, 뷰 위주
+_replay_chart_tv = components.declare_component(
+    "replay_chart_tv", path=str(Path(__file__).parent / "chart_component_tv"))
 
 START_CASH = 10_000_000   # 시작 자본 (원)
 CTX = 200                 # 시작 시 보여줄 과거 봉 수
@@ -377,6 +380,12 @@ with st.sidebar:
     st.number_input("플레이 봉 수", min_value=150, max_value=2000,
                     value=2000, step=50, key="play_n",
                     help="한 종목당 플레이할 봉 수 (150~2000).")
+    st.radio("차트 엔진",
+             ["Plotly (추세선 그리기 가능)",
+              "TradingView (트뷰 룩 · 그리기 없음)"],
+             key="chart_engine",
+             help="TradingView 엔진은 트뷰 차트 느낌·부드러운 팬/줌. "
+                  "추세선 자유 그리기는 Plotly 엔진 전용.")
     st.caption(f"시작 자본 {START_CASH:,}원 · 종목을 갈아타도 자본·수익률은 누적됩니다.")
 
 st.title("📊 봉 리플레이 매매 연습")
@@ -649,17 +658,32 @@ if _v2.button(_btn_label, width="stretch", key="toggle_view"):
     st.session_state.view_all = not st.session_state.view_all
     st.rerun()
 
-chart_val = _replay_chart(
-    x=xs, o=g["o"][view_lo:end + 1], h=g["h"][view_lo:end + 1],
-    l=g["l"][view_lo:end + 1], c=g["c"][view_lo:end + 1], v=_vol,
-    markers=markers, peaks=peaks,
-    cur=cur, lo=view_lo, end=end, price=price,
-    ymin=_ymin, ymax=_ymax, up=UP, down=DOWN,
-    trendlines=st.session_state.trendlines,
-    resetToken=st.session_state.get("reset_token", 0), height=560,
-    key="replaychart", default=None)
-if isinstance(chart_val, dict) and "lines" in chart_val:
-    st.session_state.trendlines = chart_val["lines"]
+_use_tv = str(st.session_state.get("chart_engine", "")).startswith("TradingView")
+if _use_tv:
+    # TradingView 엔진 — lightweight-charts. 추세선 그리기 없음.
+    _replay_chart_tv(
+        dates=g["dates"][view_lo:end + 1],
+        o=g["o"][view_lo:end + 1], h=g["h"][view_lo:end + 1],
+        l=g["l"][view_lo:end + 1], c=g["c"][view_lo:end + 1], v=_vol,
+        # 마커 x를 슬라이스 인덱스로 보정 (컴포넌트는 0-based dates 배열을 봄)
+        markers=[{**m, "x": m["x"] - view_lo} for m in markers],
+        peaks=[{**p, "x": p["x"] - view_lo} for p in peaks],
+        viewAll=st.session_state.view_all,
+        window=PLOT_WINDOW, height=560,
+        resetToken=st.session_state.get("reset_token", 0),
+        key="replaychart_tv", default=None)
+else:
+    chart_val = _replay_chart(
+        x=xs, o=g["o"][view_lo:end + 1], h=g["h"][view_lo:end + 1],
+        l=g["l"][view_lo:end + 1], c=g["c"][view_lo:end + 1], v=_vol,
+        markers=markers, peaks=peaks,
+        cur=cur, lo=view_lo, end=end, price=price,
+        ymin=_ymin, ymax=_ymax, up=UP, down=DOWN,
+        trendlines=st.session_state.trendlines,
+        resetToken=st.session_state.get("reset_token", 0), height=560,
+        key="replaychart", default=None)
+    if isinstance(chart_val, dict) and "lines" in chart_val:
+        st.session_state.trendlines = chart_val["lines"]
 
 # ── 수익률 추이 (매수·매도 시점에만 기록) ──
 st.subheader("📈 내 수익률 추이 (매매 시점 기준)")
