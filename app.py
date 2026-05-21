@@ -144,6 +144,7 @@ def new_account(play_n: int) -> bool:
     st.session_state.session_done = False
     st.session_state.game = g
     st.session_state.trendlines = []
+    st.session_state.tv_trendlines = []
     st.session_state.reset_token = st.session_state.get("reset_token", 0) + 1
     record_equity()
     return True
@@ -216,6 +217,7 @@ def next_stock(play_n: int) -> bool:
     st.session_state.stock_no += 1
     st.session_state.game = ng
     st.session_state.trendlines = []
+    st.session_state.tv_trendlines = []
     st.session_state.reset_token = st.session_state.get("reset_token", 0) + 1
     return True
 
@@ -660,18 +662,22 @@ if _v2.button(_btn_label, width="stretch", key="toggle_view"):
 
 _use_tv = str(st.session_state.get("chart_engine", "")).startswith("TradingView")
 if _use_tv:
-    # TradingView 엔진 — lightweight-charts. 추세선 그리기 없음.
-    _replay_chart_tv(
+    # TradingView 엔진 — lightweight-charts. 두 점 클릭으로 추세선 그리기 지원.
+    st.session_state.setdefault("tv_trendlines", [])
+    tv_val = _replay_chart_tv(
         dates=g["dates"][view_lo:end + 1],
         o=g["o"][view_lo:end + 1], h=g["h"][view_lo:end + 1],
         l=g["l"][view_lo:end + 1], c=g["c"][view_lo:end + 1], v=_vol,
         # 마커 x를 슬라이스 인덱스로 보정 (컴포넌트는 0-based dates 배열을 봄)
         markers=[{**m, "x": m["x"] - view_lo} for m in markers],
         peaks=[{**p, "x": p["x"] - view_lo} for p in peaks],
+        trendlines=st.session_state.tv_trendlines,
         viewAll=st.session_state.view_all,
         window=PLOT_WINDOW, height=560,
         resetToken=st.session_state.get("reset_token", 0),
         key="replaychart_tv", default=None)
+    if isinstance(tv_val, dict) and "lines" in tv_val:
+        st.session_state.tv_trendlines = tv_val["lines"]
 else:
     chart_val = _replay_chart(
         x=xs, o=g["o"][view_lo:end + 1], h=g["h"][view_lo:end + 1],
