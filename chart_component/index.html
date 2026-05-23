@@ -185,6 +185,28 @@ function snapHorizontal() {
   return changed;
 }
 
+// ── 오른쪽 연장 — 그린 기울기 그대로 차트 오른쪽 끝까지 늘린다 ──
+// 왼쪽 점(작은 x)을 고정 앵커로 두고, 오른쪽 끝(x축 우측 한계)까지 같은 기울기로 연장.
+function extendRight() {
+  const fl = gd._fullLayout;
+  if (!fl || !fl.xaxis) return false;
+  const xMax = fl.xaxis.range[1];
+  let changed = false;
+  (gd.layout.shapes || []).forEach(function (s) {
+    if (s.type !== "line") return;
+    // 왼쪽(앵커) / 오른쪽 끝 구분
+    let xa, ya, xb, yb;
+    if (s.x0 <= s.x1) { xa = s.x0; ya = s.y0; xb = s.x1; yb = s.y1; }
+    else { xa = s.x1; ya = s.y1; xb = s.x0; yb = s.y0; }
+    if (Math.abs(xb - xMax) < 1e-6) return;        // 이미 끝까지 닿음
+    const slope = (yb - ya) / ((xb - xa) || 1e-9);
+    s.x0 = xa; s.y0 = ya;
+    s.x1 = xMax; s.y1 = ya + slope * (xMax - xa);
+    changed = true;
+  });
+  return changed;
+}
+
 function render(a) {
   // 추세선 결정 — 최초 로드/종목 리셋 때만 Python 값을 쓰고,
   // 그 외(봉 전진 등 일반 리렌더)에는 프론트의 현재 추세선을 그대로 유지한다.
@@ -203,7 +225,10 @@ function render(a) {
     // 매매 연습엔 쓸모없는 데이터 선택 도구 제거 (박스/올가미 선택)
     modeBarButtonsToRemove: ["select2d", "lasso2d"]
   };
-  Plotly.react(gd, f.traces, f.layout, config);
+  Plotly.react(gd, f.traces, f.layout, config).then(function () {
+    // 봉 전진 등으로 오른쪽 끝이 늘어나면 추세선도 끝까지 다시 연장
+    if (extendRight()) { Plotly.relayout(gd, { shapes: gd.layout.shapes }); }
+  });
   if (!bound) {
     bound = true;
     gd.on("plotly_relayout", function (ev) {
@@ -213,7 +238,9 @@ function render(a) {
         return k === "shapes" || k.indexOf("shapes[") === 0;
       });
       if (!shapeChange) return;
-      if (snapHorizontal()) {        // 거의 수평인 선을 정확히 수평으로
+      const snapped = snapHorizontal();   // 거의 수평인 선을 정확히 수평으로
+      const extended = extendRight();      // 오른쪽 끝까지 연장
+      if (snapped || extended) {
         applyingSnap = true;
         Plotly.relayout(gd, { shapes: gd.layout.shapes }).then(function () {
           applyingSnap = false;
