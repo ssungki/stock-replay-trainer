@@ -81,6 +81,12 @@ function buildFigure(a, shapes) {
       showlegend: false, hoverinfo: "text", hovertext: m.text
     });
   });
+  // ── 축 범위 고정 — 추세선(연장 포함)이 autorange를 건드려 차트가 움직이는 것 방지.
+  //    기울어진 선이 화면 위/아래로 빠져나가도 캔들 위치는 그대로 유지된다.
+  const _xs = a.x || [];
+  const _xr = _xs.length ? [_xs[0] - 0.6, _xs[_xs.length - 1] + 0.6] : undefined;
+  const _yspan = (a.ymax - a.ymin) || 1;
+  const _yr = [a.ymin - _yspan * 0.10, a.ymax + _yspan * 0.10];
   const layout = {
     height: a.height || 560, margin: { l: 10, r: 10, t: 30, b: 10 },
     dragmode: "drawline", newshape: { line: { color: ORANGE, width: 4 } },
@@ -106,9 +112,11 @@ function buildFigure(a, shapes) {
       }))
     ],
     xaxis: { rangeslider: { visible: false }, showticklabels: false,
-      title: "(봉 번호 숨김)", anchor: "y2" },
+      title: "(봉 번호 숨김)", anchor: "y2",
+      range: _xr, autorange: false },
     yaxis: { tickformat: ",.0f", ticksuffix: "원", automargin: true,
-      domain: [0.27, 1.0] },
+      domain: [0.27, 1.0],
+      range: _yr, autorange: false },
     yaxis2: { domain: [0.0, 0.2], showticklabels: false, showgrid: false,
       zeroline: false, fixedrange: true },
     showlegend: false
