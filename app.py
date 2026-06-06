@@ -33,7 +33,15 @@ MAX_ENTRIES = 10          # 한 종목당 매수(진입) 최대 횟수
 
 @st.cache_data(ttl=86400, show_spinner="종목 목록 불러오는 중...")
 def load_listing():
-    df = fdr.StockListing("KRX")[["Code", "Name", "Market", "Marcap"]].dropna()
+    # Streamlit Cloud 에서 KRX 사이트 차단으로 fdr.StockListing 이 깨짐(2026-06-06).
+    # 정적 CSV(repo 동봉)를 1순위로 읽고, 없으면 fdr 폴백 — 로컬 개발 환경 호환.
+    from pathlib import Path
+    csv_path = Path(__file__).parent / "krx_listing.csv"
+    if csv_path.exists():
+        df = pd.read_csv(csv_path, dtype={"Code": str})
+        df = df[["Code", "Name", "Market", "Marcap"]].dropna()
+    else:
+        df = fdr.StockListing("KRX")[["Code", "Name", "Market", "Marcap"]].dropna()
     df = df[df["Name"].astype(str).str.strip() != ""]
     return df.sort_values("Marcap", ascending=False).head(200).reset_index(drop=True)
 
