@@ -11,6 +11,7 @@ import random
 from pathlib import Path
 
 import FinanceDataReader as fdr
+import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 import streamlit.components.v1 as components
