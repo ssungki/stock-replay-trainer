@@ -16,7 +16,39 @@ import plotly.graph_objects as go
 import streamlit as st
 import streamlit.components.v1 as components
 
-st.set_page_config(page_title="봉 리플레이 매매 연습", page_icon="📊", layout="wide")
+st.set_page_config(
+    page_title="봉 리플레이 매매 연습",
+    page_icon="📊",
+    layout="wide",
+    initial_sidebar_state="auto",  # 폰에선 자동으로 접힘
+)
+
+# 모바일 친화 CSS — 좁은 화면에서 컬럼이 stack 으로 떨어지게, 폰트·버튼 키우기.
+# (2026-06-13 사장님 요청: 폰으로 보면 불편함)
+st.markdown("""
+<style>
+  /* 모바일(폭 768px 이하) */
+  @media (max-width: 768px) {
+    /* 메인 컨테이너 좌우 패딩 줄여 화면 활용도 ↑ */
+    .main .block-container { padding: 0.5rem !important; max-width: 100% !important; }
+    /* st.columns 가 좁은 폭에선 wrap 되어 한 줄에 하나씩 */
+    div[data-testid="stHorizontalBlock"] { flex-wrap: wrap !important; }
+    div[data-testid="stHorizontalBlock"] > div { min-width: 100% !important; flex: 1 1 100% !important; }
+    /* 단, 매매 버튼 / 메트릭 같이 컬럼이 메인 컨트롤일 때는 한 줄 유지 — 자동 wrap 만으로 충분 */
+    /* 버튼 키우기 — 터치 친화 */
+    .stButton button { min-height: 48px !important; font-size: 1rem !important; }
+    /* 메트릭 폰트 축소 (한 줄 narrow 화면에서 잘림 방지) */
+    [data-testid="stMetricValue"] { font-size: 1.2rem !important; }
+    [data-testid="stMetricLabel"] { font-size: 0.85rem !important; }
+    /* 사이드바 펼쳤을 때 화면 80% 차지 */
+    section[data-testid="stSidebar"] { min-width: 80vw !important; }
+    /* 헤더 폰트 좀 줄임 */
+    h1 { font-size: 1.4rem !important; }
+    h2 { font-size: 1.2rem !important; }
+    h3 { font-size: 1.05rem !important; }
+  }
+</style>
+""", unsafe_allow_html=True)
 
 # 캔들차트 + 추세선 커스텀 컴포넌트 (자유 그리기 + 봉 전진 후에도 유지 + 개별 삭제)
 _replay_chart = components.declare_component(
