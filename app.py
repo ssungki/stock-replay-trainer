@@ -52,6 +52,16 @@ st.markdown("""
       transform: translateX(0) !important;
       visibility: visible !important;
     }
+    /* 2026-06-14 모바일 하단 액션바 — 메인 컨테이너의 마지막 자식(매매 버튼 영역) sticky bottom */
+    .main .block-container { padding-bottom: 240px !important; }
+    section.main > div.block-container > div > div:last-child,
+    [data-testid="stMainBlockContainer"] > div > div:last-child {
+      position: fixed !important; bottom: 0 !important; left: 0 !important; right: 0 !important;
+      background: #ffffff !important; z-index: 999 !important;
+      padding: 8px !important; max-height: 230px !important; overflow-y: auto !important;
+      box-shadow: 0 -2px 12px rgba(0,0,0,0.12) !important;
+      border-top: 1px solid #e0e0e0 !important;
+    }
     /* 헤더 폰트 좀 줄임 */
     h1 { font-size: 1.4rem !important; }
     h2 { font-size: 1.2rem !important; }
@@ -613,36 +623,40 @@ c3.metric("보유", f"{shares:,}주", f"평단 {avg:,.0f}" if shares else "현�
 c4.metric("총자산", f"{total:,.0f} 원")
 c5.metric("누적 수익률", f"{ret:+.2f} %", f"{total - START_CASH:+,.0f} 원")
 
-# ── 컨트롤: 진행 ──
-b1, b3 = st.columns(2)
-if b1.button("▶ 다음 봉", width="stretch", disabled=g["revealed"]):
-    advance(1)
-    st.rerun()
-if b3.button("🔎 정답 공개", width="stretch", disabled=g["revealed"]):
-    g["revealed"] = True
-    st.rerun()
-
-# ── 컨트롤: 매매 ──
+# ── 컨트롤: 진행 + 매매 (모바일에선 하단 고정) ──
+# 2026-06-14: 폰에서 차트 보면서 매매 한 손 조작 가능하게 하단 액션바.
 _entries = entry_count(g)
 _entries_left = MAX_ENTRIES - _entries
-t1, t2 = st.columns(2)
-with t1:
-    _buy_label = (f"🟢 몰빵 매수 (진입 {_entries_left}/{MAX_ENTRIES})"
-                  if _entries_left > 0 else "🟢 진입 횟수 소진")
-    if st.button(_buy_label, width="stretch",
-                 disabled=g["revealed"] or shares > 0 or _entries_left <= 0,
-                 help=f"보유 현금 전액으로 현재 종가에 매수 · 한 종목당 {MAX_ENTRIES}회까지"):
-        do_buy()
+sell_pct = st.select_slider("매도 비율", options=list(range(10, 101, 10)),
+                            value=100, key="sell_pct",
+                            disabled=g["revealed"] or shares < 1)
+
+with st.container():
+    st.markdown('<div class="mobile-action-bar">', unsafe_allow_html=True)
+    b1, b3 = st.columns(2)
+    if b1.button("▶ 다음 봉", width="stretch", disabled=g["revealed"]):
+        advance(1)
         st.rerun()
-with t2:
-    sell_pct = st.select_slider("매도 비율", options=list(range(10, 101, 10)),
-                                value=100, key="sell_pct",
-                                disabled=g["revealed"] or shares < 1)
-    if st.button(f"🔴 {sell_pct}% 매도", width="stretch",
-                 disabled=g["revealed"] or shares < 1,
-                 help="보유 주식의 선택 비율만큼 현재 종가에 매도"):
-        do_sell(int(sell_pct))
+    if b3.button("🔎 정답 공개", width="stretch", disabled=g["revealed"]):
+        g["revealed"] = True
         st.rerun()
+
+    t1, t2 = st.columns(2)
+    with t1:
+        _buy_label = (f"🟢 몰빵 매수 ({_entries_left}/{MAX_ENTRIES})"
+                      if _entries_left > 0 else "🟢 진입 소진")
+        if st.button(_buy_label, width="stretch",
+                     disabled=g["revealed"] or shares > 0 or _entries_left <= 0,
+                     help=f"보유 현금 전액으로 현재 종가에 매수 · 한 종목당 {MAX_ENTRIES}회까지"):
+            do_buy()
+            st.rerun()
+    with t2:
+        if st.button(f"🔴 {sell_pct}% 매도", width="stretch",
+                     disabled=g["revealed"] or shares < 1,
+                     help="보유 주식의 선택 비율만큼 현재 종가에 매도"):
+            do_sell(int(sell_pct))
+            st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
 
 # ── 정답 (공개되면 차트 바로 위에 표시) ──
 if g["revealed"]:
