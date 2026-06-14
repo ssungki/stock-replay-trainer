@@ -36,8 +36,8 @@
 <body>
 <!-- 2026-06-14 폰 핀치줌 안 되는 문제: 줌/추세선 모드 토글 -->
 <div id="mode-toggle">
-  <button id="btn-draw" class="active" type="button">📏 추세선 그리기</button>
-  <button id="btn-zoom" type="button">🔍 줌/이동 (핀치줌)</button>
+  <button id="btn-zoom" class="active" type="button">🔍 이동/줌 (핀치 자유)</button>
+  <button id="btn-draw" type="button">📏 추세선 그리기</button>
 </div>
 <div id="chart"></div>
 <div id="tools"></div>
@@ -47,8 +47,12 @@ const ORANGE = "#ff9500";
 let gd = document.getElementById("chart");
 let toolsEl = document.getElementById("tools");
 let bound = false;
-let dragMode = "drawline";  // 2026-06-14 모드 토글 (drawline ↔ zoom)
-// 모드 버튼 핸들러
+// 2026-06-14 모바일 UX:
+// - 기본 dragmode = "pan" (한 손가락 = 이동, 두 손가락 핀치 = 줌인/아웃 자유)
+// - 추세선 그리기 모드 토글로 일시 전환
+// - PC 마우스 휠도 줌(scrollZoom)
+let dragMode = "pan";
+
 document.getElementById("btn-draw").addEventListener("click", function () {
   dragMode = "drawline";
   this.classList.add("active");
@@ -56,11 +60,14 @@ document.getElementById("btn-draw").addEventListener("click", function () {
   if (gd && gd.layout) Plotly.relayout(gd, { dragmode: "drawline" });
 });
 document.getElementById("btn-zoom").addEventListener("click", function () {
-  dragMode = "zoom";
+  dragMode = "pan";
   this.classList.add("active");
   document.getElementById("btn-draw").classList.remove("active");
-  if (gd && gd.layout) Plotly.relayout(gd, { dragmode: "zoom" });
+  if (gd && gd.layout) Plotly.relayout(gd, { dragmode: "pan" });
 });
+// 초기 active 표시 — 줌 버튼이 default
+document.getElementById("btn-draw").classList.remove("active");
+document.getElementById("btn-zoom").classList.add("active");
 let initialized = false;     // 최초 렌더 여부
 let lastReset = null;        // 종목 리셋 토큰 (바뀌면 추세선 초기화)
 
@@ -259,12 +266,14 @@ function render(a) {
   const f = buildFigure(a, shapes);
   const config = {
     displaylogo: false, scrollZoom: true, responsive: true,
-    // 2026-06-14: 폰에서 핀치줌 안 되는 문제 — 모드바에 줌·팬 노출,
-    // 사용자가 줌 모드로 전환해서 핀치줌 가능하게.
     displayModeBar: true,
+    // 2026-06-14: 폰 핀치줌 자유자재 — pan 기본 + 모드바에 zoom/zoomIn/zoomOut/autoScale 노출
     modeBarButtonsToAdd: ["drawline", "eraseshape"],
-    // 매매 연습엔 쓸모없는 데이터 선택 도구 제거 (박스/올가미 선택)
-    modeBarButtonsToRemove: ["select2d", "lasso2d"]
+    modeBarButtonsToRemove: ["select2d", "lasso2d"],
+    // 두 손가락 핀치줌 명시 활성화
+    doubleClick: "reset",
+    showAxisDragHandles: true,
+    showAxisRangeEntryBoxes: true,
   };
   Plotly.react(gd, f.traces, f.layout, config).then(function () {
     // 봉 전진 등으로 오른쪽 끝이 늘어나면 추세선도 끝까지 다시 연장
