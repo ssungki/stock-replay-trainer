@@ -20,7 +20,9 @@ st.set_page_config(
     page_title="봉 리플레이 매매 연습",
     page_icon="📊",
     layout="wide",
-    initial_sidebar_state="auto",  # 폰에선 자동으로 접힘
+    # 2026-06-14: 가로모드(landscape) 폰에서 사이드바가 자동 펼쳐져 차트 가림 문제 →
+    # 항상 'collapsed' 로 시작. 필요할 때만 사용자가 좌상단 햄버거로 펼침.
+    initial_sidebar_state="collapsed",
 )
 
 # 모바일 친화 CSS — 좁은 화면에서 컬럼이 stack 으로 떨어지게, 폰트·버튼 키우기.
