@@ -7,6 +7,12 @@
   html, body { margin: 0; padding: 0;
     font-family: -apple-system, "Segoe UI", "Malgun Gothic", sans-serif; }
   #chart { width: 100%; }
+  #mode-toggle { display: flex; gap: 4px; padding: 6px 8px 0; }
+  #mode-toggle button { flex: 1; border: 1px solid #ddd; background: #f6f6f6;
+    border-radius: 6px; padding: 8px 10px; cursor: pointer; color: #555;
+    font-size: 13px; }
+  #mode-toggle button.active { background: #ff9500; color: #fff;
+    border-color: #ff9500; font-weight: 600; }
   #tools { display: flex; flex-wrap: wrap; align-items: center;
     gap: 6px; padding: 6px 8px 2px; font-size: 13px; color: #444; }
   #tools .hint { color: #888; }
@@ -20,9 +26,19 @@
   #clearall { border: 1px solid #ddd; background: #f6f6f6; border-radius: 14px;
     padding: 4px 11px; cursor: pointer; color: #555; }
   #clearall:hover { background: #eee; }
+  /* 모바일에서 모드 버튼 더 크게 (탭 친화) */
+  @media (max-width: 768px) {
+    #mode-toggle button { padding: 12px 10px; font-size: 14px; min-height: 44px; }
+    .modebar { transform: scale(1.5); transform-origin: top right; }
+  }
 </style>
 </head>
 <body>
+<!-- 2026-06-14 폰 핀치줌 안 되는 문제: 줌/추세선 모드 토글 -->
+<div id="mode-toggle">
+  <button id="btn-draw" class="active" type="button">📏 추세선 그리기</button>
+  <button id="btn-zoom" type="button">🔍 줌/이동 (핀치줌)</button>
+</div>
 <div id="chart"></div>
 <div id="tools"></div>
 <script>
@@ -31,6 +47,20 @@ const ORANGE = "#ff9500";
 let gd = document.getElementById("chart");
 let toolsEl = document.getElementById("tools");
 let bound = false;
+let dragMode = "drawline";  // 2026-06-14 모드 토글 (drawline ↔ zoom)
+// 모드 버튼 핸들러
+document.getElementById("btn-draw").addEventListener("click", function () {
+  dragMode = "drawline";
+  this.classList.add("active");
+  document.getElementById("btn-zoom").classList.remove("active");
+  if (gd && gd.layout) Plotly.relayout(gd, { dragmode: "drawline" });
+});
+document.getElementById("btn-zoom").addEventListener("click", function () {
+  dragMode = "zoom";
+  this.classList.add("active");
+  document.getElementById("btn-draw").classList.remove("active");
+  if (gd && gd.layout) Plotly.relayout(gd, { dragmode: "zoom" });
+});
 let initialized = false;     // 최초 렌더 여부
 let lastReset = null;        // 종목 리셋 토큰 (바뀌면 추세선 초기화)
 
@@ -89,7 +119,7 @@ function buildFigure(a, shapes) {
   const _yr = [a.ymin - _yspan * 0.10, a.ymax + _yspan * 0.10];
   const layout = {
     height: a.height || 560, margin: { l: 10, r: 10, t: 30, b: 10 },
-    dragmode: "drawline", newshape: { line: { color: ORANGE, width: 4 } },
+    dragmode: dragMode, newshape: { line: { color: ORANGE, width: 4 } },
     shapes: shapes,
     annotations: [
       { xref: "paper", yref: "paper", x: 0, y: 0.205,
@@ -229,6 +259,9 @@ function render(a) {
   const f = buildFigure(a, shapes);
   const config = {
     displaylogo: false, scrollZoom: true, responsive: true,
+    // 2026-06-14: 폰에서 핀치줌 안 되는 문제 — 모드바에 줌·팬 노출,
+    // 사용자가 줌 모드로 전환해서 핀치줌 가능하게.
+    displayModeBar: true,
     modeBarButtonsToAdd: ["drawline", "eraseshape"],
     // 매매 연습엔 쓸모없는 데이터 선택 도구 제거 (박스/올가미 선택)
     modeBarButtonsToRemove: ["select2d", "lasso2d"]
