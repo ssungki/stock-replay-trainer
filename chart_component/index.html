@@ -7,7 +7,11 @@
   html, body { margin: 0; padding: 0;
     font-family: -apple-system, "Segoe UI", "Malgun Gothic", sans-serif; }
   #chart { width: 100%; }
-  #mode-toggle { display: flex; gap: 4px; padding: 6px 8px 0; }
+  /* PC(768+) 에선 모드토글 숨김 — 기존 UX(추세선 메인, 휠줌) 유지 */
+  #mode-toggle { display: none; gap: 4px; padding: 6px 8px 0; }
+  @media (max-width: 768px) {
+    #mode-toggle { display: flex; }
+  }
   #mode-toggle button { flex: 1; border: 1px solid #ddd; background: #f6f6f6;
     border-radius: 6px; padding: 8px 10px; cursor: pointer; color: #555;
     font-size: 13px; }
