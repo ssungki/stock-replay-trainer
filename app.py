@@ -42,8 +42,16 @@ st.markdown("""
     /* 메트릭 폰트 축소 (한 줄 narrow 화면에서 잘림 방지) */
     [data-testid="stMetricValue"] { font-size: 1.2rem !important; }
     [data-testid="stMetricLabel"] { font-size: 0.85rem !important; }
-    /* 사이드바 펼쳤을 때 화면 80% 차지 */
-    section[data-testid="stSidebar"] { min-width: 80vw !important; }
+    /* 사이드바 — 모바일에선 기본 접힘 + 사용자가 펼치면 80vw */
+    section[data-testid="stSidebar"][aria-expanded="false"] {
+      transform: translateX(-100%) !important;
+      visibility: hidden !important;
+    }
+    section[data-testid="stSidebar"][aria-expanded="true"] {
+      min-width: 80vw !important; max-width: 80vw !important;
+      transform: translateX(0) !important;
+      visibility: visible !important;
+    }
     /* 헤더 폰트 좀 줄임 */
     h1 { font-size: 1.4rem !important; }
     h2 { font-size: 1.2rem !important; }
