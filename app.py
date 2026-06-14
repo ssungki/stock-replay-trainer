@@ -20,53 +20,62 @@ st.set_page_config(
     page_title="봉 리플레이 매매 연습",
     page_icon="📊",
     layout="wide",
-    # 2026-06-14: 가로모드(landscape) 폰에서 사이드바가 자동 펼쳐져 차트 가림 문제 →
-    # 항상 'collapsed' 로 시작. 필요할 때만 사용자가 좌상단 햄버거로 펼침.
     initial_sidebar_state="collapsed",
 )
 
-# 모바일 친화 CSS — 좁은 화면에서 컬럼이 stack 으로 떨어지게, 폰트·버튼 키우기.
-# (2026-06-13 사장님 요청: 폰으로 보면 불편함)
-st.markdown("""
+# 2026-06-14: PC/폰 모드 분리 — 사용자가 진입 시 명시 선택. URL ?mode=pc 또는 ?mode=mobile.
+# 같은 코드에서 두 환경 자동 처리하다 보니 양쪽이 깨지는 문제 해결.
+_qmode = st.query_params.get("mode", "")
+if _qmode not in ("pc", "mobile"):
+    st.title("📊 봉 리플레이 매매 연습")
+    st.write("### 기기를 선택해주세요")
+    st.write("선택 후 URL이 변경됩니다. 북마크하시면 다음부터 자동으로 진입합니다.")
+    _c1, _c2 = st.columns(2)
+    if _c1.button("💻 **PC 버전**\n\n넓은 화면 · 풀 기능", width="stretch"):
+        st.query_params["mode"] = "pc"
+        st.rerun()
+    if _c2.button("📱 **폰 버전**\n\n하단 매매바 · 핀치줌", width="stretch"):
+        st.query_params["mode"] = "mobile"
+        st.rerun()
+    st.stop()
+
+IS_MOBILE = (_qmode == "mobile")
+
+# 폰 모드일 때만 모바일 CSS + 하단 액션바 박음. PC는 기존 UX 그대로.
+if IS_MOBILE:
+    st.markdown("""
 <style>
-  /* 모바일(폭 768px 이하) */
-  @media (max-width: 768px) {
-    /* 메인 컨테이너 좌우 패딩 줄여 화면 활용도 ↑ */
-    .main .block-container { padding: 0.5rem !important; max-width: 100% !important; }
-    /* st.columns 가 좁은 폭에선 wrap 되어 한 줄에 하나씩 */
-    div[data-testid="stHorizontalBlock"] { flex-wrap: wrap !important; }
-    div[data-testid="stHorizontalBlock"] > div { min-width: 100% !important; flex: 1 1 100% !important; }
-    /* 단, 매매 버튼 / 메트릭 같이 컬럼이 메인 컨트롤일 때는 한 줄 유지 — 자동 wrap 만으로 충분 */
-    /* 버튼 키우기 — 터치 친화 */
-    .stButton button { min-height: 48px !important; font-size: 1rem !important; }
-    /* 메트릭 폰트 축소 (한 줄 narrow 화면에서 잘림 방지) */
-    [data-testid="stMetricValue"] { font-size: 1.2rem !important; }
-    [data-testid="stMetricLabel"] { font-size: 0.85rem !important; }
-    /* 사이드바 — 모바일에선 기본 접힘 + 사용자가 펼치면 80vw */
-    section[data-testid="stSidebar"][aria-expanded="false"] {
-      transform: translateX(-100%) !important;
-      visibility: hidden !important;
-    }
-    section[data-testid="stSidebar"][aria-expanded="true"] {
-      min-width: 80vw !important; max-width: 80vw !important;
-      transform: translateX(0) !important;
-      visibility: visible !important;
-    }
-    /* 2026-06-14 모바일 하단 액션바 — 메인 컨테이너의 마지막 자식(매매 버튼 영역) sticky bottom */
-    .main .block-container { padding-bottom: 240px !important; }
-    section.main > div.block-container > div > div:last-child,
-    [data-testid="stMainBlockContainer"] > div > div:last-child {
-      position: fixed !important; bottom: 0 !important; left: 0 !important; right: 0 !important;
-      background: #ffffff !important; z-index: 999 !important;
-      padding: 8px !important; max-height: 230px !important; overflow-y: auto !important;
-      box-shadow: 0 -2px 12px rgba(0,0,0,0.12) !important;
-      border-top: 1px solid #e0e0e0 !important;
-    }
-    /* 헤더 폰트 좀 줄임 */
-    h1 { font-size: 1.4rem !important; }
-    h2 { font-size: 1.2rem !important; }
-    h3 { font-size: 1.05rem !important; }
+  /* 메인 컨테이너 좌우 패딩 ↓ (모바일 좁은 화면 활용도) */
+  .main .block-container { padding: 0.5rem !important; padding-bottom: 240px !important;
+                            max-width: 100% !important; }
+  /* st.columns 자동 wrap (좁은 폭에선 1열) */
+  div[data-testid="stHorizontalBlock"] { flex-wrap: wrap !important; }
+  div[data-testid="stHorizontalBlock"] > div { min-width: 100% !important; flex: 1 1 100% !important; }
+  /* 버튼 키우기 (탭 친화) */
+  .stButton button { min-height: 48px !important; font-size: 1rem !important; }
+  /* 메트릭 폰트 축소 */
+  [data-testid="stMetricValue"] { font-size: 1.2rem !important; }
+  [data-testid="stMetricLabel"] { font-size: 0.85rem !important; }
+  /* 사이드바 — 기본 접힘 + 펼치면 80vw */
+  section[data-testid="stSidebar"][aria-expanded="false"] {
+    transform: translateX(-100%) !important; visibility: hidden !important;
   }
+  section[data-testid="stSidebar"][aria-expanded="true"] {
+    min-width: 80vw !important; max-width: 80vw !important;
+    transform: translateX(0) !important; visibility: visible !important;
+  }
+  /* 하단 액션바 — 매매 컨트롤 영역 sticky bottom */
+  [data-testid="stMainBlockContainer"] > div > div:last-child {
+    position: fixed !important; bottom: 0 !important; left: 0 !important; right: 0 !important;
+    background: #ffffff !important; z-index: 999 !important;
+    padding: 8px !important; max-height: 230px !important; overflow-y: auto !important;
+    box-shadow: 0 -2px 12px rgba(0,0,0,0.12) !important;
+    border-top: 1px solid #e0e0e0 !important;
+  }
+  /* 헤더 폰트 ↓ */
+  h1 { font-size: 1.4rem !important; }
+  h2 { font-size: 1.2rem !important; }
+  h3 { font-size: 1.05rem !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -431,6 +440,13 @@ def do_sell(pct: int):
 
 # ─────────────── 사이드바 ───────────────
 with st.sidebar:
+    # 2026-06-14: 기기 모드 표시 + 변경 버튼
+    _mode_label = "📱 폰 버전" if IS_MOBILE else "💻 PC 버전"
+    st.caption(f"현재 모드: {_mode_label}")
+    if st.button("🔄 기기 변경", help="PC/폰 모드 선택 화면으로 돌아갑니다"):
+        st.query_params.clear()
+        st.rerun()
+    st.divider()
     st.header("⚙️ 설정")
     st.number_input("세션 종목 수", min_value=3, max_value=30,
                     value=15, step=1, key="session_len",
