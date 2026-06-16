@@ -17,8 +17,14 @@
     font-size: 13px; }
   #mode-toggle button.active { background: #ff9500; color: #fff;
     border-color: #ff9500; font-weight: 600; }
+  /* #tools = 추세선 칩(선 1, 선 2 …) + [전체 삭제] 영역.
+     2026-06-16 사장님: "추세선1 추세선2 + 전체삭제 없어졋다" — iframe
+     높이가 안 늘어나 영역이 잘려 보였다. min-height + 옅은 배경으로
+     항상 영역이 보이게 + pushState 에서 setHeight 재호출(아래). */
   #tools { display: flex; flex-wrap: wrap; align-items: center;
-    gap: 6px; padding: 6px 8px 2px; font-size: 13px; color: #444; }
+    gap: 6px; padding: 8px 10px 6px; font-size: 13px; color: #444;
+    min-height: 38px; background: #fafafa;
+    border-top: 1px solid #eee; }
   #tools .hint { color: #888; }
   .chip { display: inline-flex; align-items: center; gap: 5px;
     background: #fff4e0; border: 1px solid #ffcf87; border-radius: 14px;
@@ -187,8 +193,18 @@ function buildFigure(a, shapes) {
   return { traces: traces, layout: layout };
 }
 
+// iframe 전체 높이 재측정 — pushState/renderTools 이후에도 호출해
+// 추세선 칩이 추가되면서 #tools 가 늘어나도 영역이 잘리지 않게 한다.
+// (2026-06-16 사장님 버그 리포트: "추세선1 추세선2 + 전체삭제 없어졋다")
+function adjustHeight() {
+  const modeH = document.getElementById("mode-toggle").offsetHeight || 0;
+  const chartH = document.getElementById("chart").offsetHeight || 560;
+  const toolsH = toolsEl.offsetHeight || 52;
+  setHeight(modeH + chartH + toolsH + 20);
+}
 function pushState() {
   renderTools();
+  adjustHeight();
   setValue({ lines: collectLines() });
 }
 function deleteLine(idx) {
@@ -206,7 +222,7 @@ function renderTools() {
   if (lines.length === 0) {
     const h = document.createElement("span");
     h.className = "hint";
-    h.textContent = "추세선 — 차트를 드래그해 그립니다 · 봉을 넘겨도 유지돼요 · 아래 ✕로 하나씩 삭제";
+    h.textContent = "추세선 — 차트를 드래그해 그립니다 · 봉을 넘겨도 유지돼요 · 그리면 여기에 [추세선 1] [추세선 2] [전체 삭제] 가 표시됩니다";
     toolsEl.appendChild(h);
     return;
   }
@@ -216,7 +232,7 @@ function renderTools() {
   lines.forEach(function (_, i) {
     const chip = document.createElement("span");
     chip.className = "chip";
-    chip.appendChild(document.createTextNode("선 " + (i + 1)));
+    chip.appendChild(document.createTextNode("추세선 " + (i + 1)));
     const x = document.createElement("button");
     x.textContent = "✕";
     x.title = "이 추세선 삭제";
@@ -226,7 +242,7 @@ function renderTools() {
   });
   const ca = document.createElement("button");
   ca.id = "clearall";
-  ca.textContent = "전체 삭제";
+  ca.textContent = "🗑 전체 삭제";
   ca.onclick = clearAll;
   toolsEl.appendChild(ca);
 }
@@ -323,21 +339,19 @@ function render(a) {
         Plotly.relayout(gd, { shapes: gd.layout.shapes }).then(function () {
           applyingSnap = false;
           renderTools();
+          adjustHeight();
           setValue({ lines: collectLines() });
         });
         return;
       }
       renderTools();
+      adjustHeight();
       setValue({ lines: collectLines() });
     });
   }
   renderTools();
   // iframe 전체 높이 = 모드토글 + 차트 + tools(chip). DOM 실제 측정.
-  setTimeout(function () {
-    const modeH = document.getElementById("mode-toggle").offsetHeight || 0;
-    const toolsH = toolsEl.offsetHeight || 52;
-    setHeight(modeH + _chartH + toolsH + 20);
-  }, 30);
+  setTimeout(adjustHeight, 30);
 }
 
 // 화면 회전(가로↔세로) 또는 리사이즈 시 차트·iframe 다시 그림
