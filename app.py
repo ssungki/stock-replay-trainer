@@ -739,10 +739,19 @@ for tr in g["trades"]:
 _vol = (g.get("v") or [0.0] * len(g["c"]))[view_lo:end + 1]
 
 # 보기 모드 토글 (차트 위)
-_v1, _v2 = st.columns([4, 1])
+# 2026-06-16 사장님 요청: 추세선 지우는 버튼이 사라져 보인다 →
+# Streamlit 쪽에 항상 보이는 [추세선 전체 지우기] 버튼 추가(롤백·복원).
+_v1, _vclr, _v2 = st.columns([3, 1, 1])
 _visible_n = end - view_lo + 1
 _v1.caption(("📊 전체 보기" if st.session_state.view_all
              else f"📊 최근 {_visible_n}봉 (지난 봉은 [전체 보기])"))
+_n_lines = len(st.session_state.trendlines or [])
+_clr_label = f"🧽 추세선 지우기 ({_n_lines})" if _n_lines else "🧽 추세선 지우기"
+if _vclr.button(_clr_label, width="stretch", key="clear_lines",
+                disabled=_n_lines == 0):
+    st.session_state.trendlines = []
+    st.session_state.reset_token = st.session_state.get("reset_token", 0) + 1
+    st.rerun()
 _btn_label = ("🎯 최근 200봉으로" if st.session_state.view_all
               else "🔍 전체 보기")
 if _v2.button(_btn_label, width="stretch", key="toggle_view"):
