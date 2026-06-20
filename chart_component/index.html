@@ -55,9 +55,19 @@
 </head>
 <body>
 <!-- 2026-06-14 폰 핀치줌 안 되는 문제: 줌/추세선 모드 토글 -->
+<!-- 2026-06-20 사장님: 그림도구 + 피보나치 — 피보나치 모드 토글 추가.
+     PC/모바일 둘 다 노출(피보나치는 화면 폭과 무관). -->
 <div id="mode-toggle">
   <button id="btn-draw" type="button">📏 추세선 그리기</button>
   <button id="btn-zoom" type="button">🔍 이동/줌</button>
+</div>
+<div id="fib-bar" style="display:flex; gap:4px; padding:4px 8px 0;">
+  <button id="btn-fib" type="button"
+    style="flex:1; border:1px solid #c7d6ff; background:#eff3ff;
+           border-radius:6px; padding:8px 10px; cursor:pointer;
+           color:#2c5dff; font-size:13px;">
+    🔢 피보나치 되돌림 (선 그으면 자동 변환)
+  </button>
 </div>
 <div id="chart"></div>
 <div id="tools"></div>
@@ -91,6 +101,66 @@ if (window.innerWidth <= 768) {
   document.getElementById("btn-draw").classList.add("active");
   document.getElementById("btn-zoom").classList.remove("active");
 }
+
+// 2026-06-20: 피보나치 모드 — 켠 상태에서 사용자가 선을 그으면
+// plotly_relayout 핸들러가 그 line shape 을 잡아 fib 라인 6개로 변환.
+const FIB_RATIOS = [
+  { r: 0.000, color: "#1f77b4" },
+  { r: 0.236, color: "#2ca02c" },
+  { r: 0.382, color: "#9467bd" },
+  { r: 0.500, color: "#7f7f7f" },
+  { r: 0.618, color: "#9467bd" },
+  { r: 0.786, color: "#2ca02c" },
+  { r: 1.000, color: "#1f77b4" },
+];
+let fibMode = false;
+function updateFibBtn() {
+  const b = document.getElementById("btn-fib");
+  if (fibMode) {
+    b.style.background = "#2c5dff";
+    b.style.color = "#fff";
+    b.textContent = "🔢 피보나치 ON — 차트에 선 그으세요";
+  } else {
+    b.style.background = "#eff3ff";
+    b.style.color = "#2c5dff";
+    b.textContent = "🔢 피보나치 되돌림 (선 그으면 자동 변환)";
+  }
+}
+document.getElementById("btn-fib").addEventListener("click", function () {
+  fibMode = !fibMode;
+  // 피보나치 켜면 자동으로 drawline 모드로
+  if (fibMode && gd && gd.layout) {
+    Plotly.relayout(gd, { dragmode: "drawline" });
+    dragMode = "drawline";
+    document.getElementById("btn-draw").classList.add("active");
+    document.getElementById("btn-zoom").classList.remove("active");
+  }
+  updateFibBtn();
+});
+
+// 방금 그린 line shape 을 피보나치 7개 라인으로 변환
+function convertToFib(s, allShapes) {
+  const lo = Math.min(s.y0, s.y1);
+  const hi = Math.max(s.y0, s.y1);
+  const range = hi - lo;
+  const xL = Math.min(s.x0, s.x1);
+  const xR = Math.max(s.x0, s.x1);
+  const groupId = "fib-" + Date.now();
+  const fibShapes = FIB_RATIOS.map(function (f) {
+    const y = lo + range * (1 - f.r);   // 위에서부터 0% → 100%
+    return {
+      type: "line", xref: "x", yref: "y",
+      x0: xL, y0: y, x1: xR, y1: y,
+      line: { color: f.color, width: 2, dash: "dot" },
+      editable: true, layer: "above",
+      name: groupId + "|" + f.r.toFixed(3),
+    };
+  });
+  // 원본 line 제거 + fib 추가
+  const idx = allShapes.indexOf(s);
+  if (idx >= 0) allShapes.splice(idx, 1);
+  return allShapes.concat(fibShapes);
+}
 let initialized = false;     // 최초 렌더 여부
 let lastReset = null;        // 종목 리셋 토큰 (바뀌면 추세선 초기화)
 
@@ -101,17 +171,62 @@ function post(type, extra) {
 function setValue(v) { post("streamlit:setComponentValue", { value: v, dataType: "json" }); }
 function setHeight(h) { post("streamlit:setFrameHeight", { height: h }); }
 
+// 2026-06-20: 추세선(line) 외에도 rect/circle/path + 피보나치 다 저장·복원.
+// 피보나치는 shape.name = "fib-{ts}|{ratio}" 로 그룹 마킹.
+function shapeToRecord(s) {
+  const base = { type: s.type, name: s.name || "" };
+  if (s.line) {
+    if (s.line.color) base.color = s.line.color;
+    if (s.line.dash)  base.dash  = s.line.dash;
+    if (s.line.width) base.width = s.line.width;
+  }
+  if (s.type === "path") {
+    return Object.assign(base, { path: s.path });
+  }
+  return Object.assign(base, { x0: s.x0, y0: s.y0, x1: s.x1, y1: s.y1 });
+}
+function recordToShape(t) {
+  const lineProps = {
+    color: t.color || ORANGE,
+    width: t.width || 4,
+  };
+  if (t.dash) lineProps.dash = t.dash;
+  const common = { xref: "x", yref: "y",
+    line: lineProps, editable: true, layer: "above",
+    name: t.name || "" };
+  if (t.type === "path") {
+    return Object.assign({ type: "path", path: t.path }, common);
+  }
+  return Object.assign({ type: t.type || "line",
+    x0: t.x0, y0: t.y0, x1: t.x1, y1: t.y1 }, common);
+}
 function lineShapes(trendlines) {
-  return (trendlines || []).map(function (t) {
-    return { type: "line", xref: "x", yref: "y",
-      x0: t.x0, y0: t.y0, x1: t.x1, y1: t.y1,
-      line: { color: ORANGE, width: 4 }, editable: true, layer: "above" };
-  });
+  // 함수명은 호환을 위해 lineShapes 유지 — 실제로는 모든 shape 복원
+  return (trendlines || []).map(recordToShape);
 }
 function collectLines() {
+  // 사용자가 그린 모든 도형 직렬화
   return (gd.layout.shapes || [])
-    .filter(function (s) { return s.type === "line"; })
-    .map(function (s) { return { x0: s.x0, y0: s.y0, x1: s.x1, y1: s.y1 }; });
+    .filter(function (s) {
+      return s.type === "line" || s.type === "rect"
+        || s.type === "circle" || s.type === "path";
+    })
+    .map(shapeToRecord);
+}
+// 피보나치 그룹 ID — shape.name 형식 "fib-1718...|0.382"
+function fibGroupId(s) {
+  if (!s.name || s.name.indexOf("fib-") !== 0) return null;
+  return s.name.split("|")[0];
+}
+function shapeLabel(s) {
+  if (fibGroupId(s)) return "피보나치";
+  switch (s.type) {
+    case "line":   return "추세선";
+    case "rect":   return "사각형";
+    case "circle": return "원";
+    case "path":   return "자유선";
+    default:       return "도형";
+  }
 }
 
 function buildFigure(a, shapes) {
@@ -208,34 +323,52 @@ function pushState() {
   setValue({ lines: collectLines() });
 }
 function deleteLine(idx) {
-  const shapes = (gd.layout.shapes || []).slice();
-  console.log("deleteLine", idx, "of", shapes.length);
+  let shapes = (gd.layout.shapes || []).slice();
   if (idx < 0 || idx >= shapes.length) return;
-  shapes.splice(idx, 1);
+  const target = shapes[idx];
+  const gid = fibGroupId(target);
+  if (gid) {
+    // 피보나치 그룹 — 같은 그룹의 모든 라인 제거
+    shapes = shapes.filter(function (s) { return fibGroupId(s) !== gid; });
+  } else {
+    shapes.splice(idx, 1);
+  }
   Plotly.relayout(gd, { shapes: shapes }).then(pushState);
 }
 function clearAll() { Plotly.relayout(gd, { shapes: [] }).then(pushState); }
 
 function renderTools() {
-  const lines = collectLines();
+  const shapes = (gd.layout && gd.layout.shapes) ? gd.layout.shapes : [];
   toolsEl.innerHTML = "";
-  if (lines.length === 0) {
+  if (shapes.length === 0) {
     const h = document.createElement("span");
     h.className = "hint";
-    h.textContent = "추세선 — 차트를 드래그해 그립니다 · 봉을 넘겨도 유지돼요 · 그리면 여기에 [추세선 1] [추세선 2] [전체 삭제] 가 표시됩니다";
+    h.textContent = "📏 추세선 · ✏️ 자유선 · ⬜ 사각형 · ⭕ 원 — 차트 우상단 도구로 그리고, 🧽 지우개로 개별 삭제. 🔢 피보나치는 위 파란 버튼.";
     toolsEl.appendChild(h);
     return;
   }
   const lab = document.createElement("span");
-  lab.textContent = "추세선:";
+  lab.textContent = "도형:";
   toolsEl.appendChild(lab);
-  lines.forEach(function (_, i) {
+  // 직렬화 가능한 도형만(line/rect/circle/path) 칩에 노출.
+  // 피보나치 그룹은 첫 라인 1개만 칩 표시(7개를 묶음).
+  const drawableTypes = ["line", "rect", "circle", "path"];
+  const seenFibGroups = {};
+  let chipNo = 0;
+  shapes.forEach(function (s, i) {
+    if (drawableTypes.indexOf(s.type) < 0) return;
+    const gid = fibGroupId(s);
+    if (gid) {
+      if (seenFibGroups[gid]) return;
+      seenFibGroups[gid] = true;
+    }
+    chipNo += 1;
     const chip = document.createElement("span");
     chip.className = "chip";
-    chip.appendChild(document.createTextNode("추세선 " + (i + 1)));
+    chip.appendChild(document.createTextNode(shapeLabel(s) + " " + chipNo));
     const x = document.createElement("button");
     x.textContent = "✕";
-    x.title = "이 추세선 삭제";
+    x.title = "이 도형 삭제";
     x.onclick = function () { deleteLine(i); };
     chip.appendChild(x);
     toolsEl.appendChild(chip);
@@ -263,6 +396,7 @@ function snapHorizontal() {
   let changed = false;
   (gd.layout.shapes || []).forEach(function (s) {
     if (s.type !== "line") return;
+    if (fibGroupId(s)) return;       // 피보나치 라인은 스냅 X (이미 수평)
     const ang = lineAngleDeg(s);
     if (ang < SNAP_DEG || ang > 180 - SNAP_DEG) {
       const my = (s.y0 + s.y1) / 2;
@@ -281,6 +415,7 @@ function extendRight() {
   let changed = false;
   (gd.layout.shapes || []).forEach(function (s) {
     if (s.type !== "line") return;
+    if (fibGroupId(s)) return;       // 피보나치는 오른쪽 끝까지 별도 처리(아래)
     // 왼쪽(앵커) / 오른쪽 끝 구분
     let xa, ya, xb, yb;
     if (s.x0 <= s.x1) { xa = s.x0; ya = s.y0; xb = s.x1; yb = s.y1; }
@@ -290,6 +425,24 @@ function extendRight() {
     s.x0 = xa; s.y0 = ya;
     s.x1 = xMax; s.y1 = ya + slope * (xMax - xa);
     changed = true;
+  });
+  // 피보나치 그룹별 — 같은 그룹 라인들의 x 범위를 통일하고 오른쪽 끝까지 연장
+  const fibGroups = {};
+  (gd.layout.shapes || []).forEach(function (s) {
+    const gid = fibGroupId(s);
+    if (!gid) return;
+    if (!fibGroups[gid]) fibGroups[gid] = [];
+    fibGroups[gid].push(s);
+  });
+  Object.keys(fibGroups).forEach(function (gid) {
+    const grp = fibGroups[gid];
+    const xL = Math.min.apply(null, grp.map(function (s) { return Math.min(s.x0, s.x1); }));
+    grp.forEach(function (s) {
+      if (s.x0 !== xL || s.x1 !== xMax) {
+        s.x0 = xL; s.x1 = xMax;
+        changed = true;
+      }
+    });
   });
   return changed;
 }
@@ -311,8 +464,10 @@ function render(a) {
   const config = {
     displaylogo: false, scrollZoom: true, responsive: true,
     displayModeBar: true,
-    // 2026-06-14: 폰 핀치줌 자유자재 — pan 기본 + 모드바에 zoom/zoomIn/zoomOut/autoScale 노출
-    modeBarButtonsToAdd: ["drawline", "eraseshape"],
+    // 2026-06-20: 사장님 요청 — 그림 도구 풀 세트
+    // (선/자유선/사각형/원) + 지우개. 피보나치는 별도 토글 버튼(아래 #fib-btn).
+    modeBarButtonsToAdd: ["drawline", "drawopenpath",
+      "drawrect", "drawcircle", "eraseshape"],
     modeBarButtonsToRemove: ["select2d", "lasso2d"],
     // 두 손가락 핀치줌 명시 활성화
     doubleClick: "reset",
@@ -332,6 +487,27 @@ function render(a) {
         return k === "shapes" || k.indexOf("shapes[") === 0;
       });
       if (!shapeChange) return;
+
+      // 피보나치 모드 — 사용자가 새 line 을 그으면 7개 fib 라인으로 변환
+      if (fibMode) {
+        const shapes = (gd.layout.shapes || []).slice();
+        // 가장 마지막 shape 이 일반 line(name 비어있고 fib 그룹 아님)이면 변환
+        const last = shapes.length ? shapes[shapes.length - 1] : null;
+        if (last && last.type === "line" && !fibGroupId(last)) {
+          const newShapes = convertToFib(last, shapes);
+          fibMode = false;
+          updateFibBtn();
+          applyingSnap = true;
+          Plotly.relayout(gd, { shapes: newShapes }).then(function () {
+            applyingSnap = false;
+            renderTools();
+            adjustHeight();
+            setValue({ lines: collectLines() });
+          });
+          return;
+        }
+      }
+
       const snapped = snapHorizontal();   // 거의 수평인 선을 정확히 수평으로
       const extended = extendRight();      // 오른쪽 끝까지 연장
       if (snapped || extended) {
