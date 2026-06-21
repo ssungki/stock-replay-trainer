@@ -311,11 +311,13 @@ function buildFigure(a, shapes) {
 // iframe 전체 높이 재측정 — pushState/renderTools 이후에도 호출해
 // 추세선 칩이 추가되면서 #tools 가 늘어나도 영역이 잘리지 않게 한다.
 // (2026-06-16 사장님 버그 리포트: "추세선1 추세선2 + 전체삭제 없어졋다")
+// (2026-06-22 사장님 버그 리포트: 피보나치 버튼 밑 짤림 — fib-bar 높이 누락)
 function adjustHeight() {
   const modeH = document.getElementById("mode-toggle").offsetHeight || 0;
+  const fibH = document.getElementById("fib-bar").offsetHeight || 0;
   const chartH = document.getElementById("chart").offsetHeight || 560;
   const toolsH = toolsEl.offsetHeight || 52;
-  setHeight(modeH + chartH + toolsH + 20);
+  setHeight(modeH + fibH + chartH + toolsH + 20);
 }
 function pushState() {
   renderTools();
