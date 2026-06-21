@@ -130,15 +130,19 @@ if (window.innerWidth <= 768) {
   document.getElementById("btn-zoom").classList.remove("active");
 }
 
-// 2026-06-20: 피보나치 — 7개 라인. 2026-06-22: HTS 도구 패널 통합.
+// 2026-06-20: 피보나치 — 7개 라인. 2026-06-22: HTS 도구 패널 + 라벨 + 확장.
+// 사용자가 그린 방향(시작점 → 끝점)이 0% → 100%. 확장은 100% 너머.
+// r > 1.0 = 확장(extension), r < 0 = 역확장 (잘 안 씀).
 const FIB_RATIOS = [
-  { r: 0.000, color: "#1f77b4" },
+  { r: 0.000, color: "#1f77b4" },     // 시작점
   { r: 0.236, color: "#2ca02c" },
   { r: 0.382, color: "#9467bd" },
   { r: 0.500, color: "#7f7f7f" },
   { r: 0.618, color: "#9467bd" },
   { r: 0.786, color: "#2ca02c" },
-  { r: 1.000, color: "#1f77b4" },
+  { r: 1.000, color: "#1f77b4" },     // 끝점
+  { r: 1.272, color: "#ff8c00" },     // 확장
+  { r: 1.618, color: "#d62728" },     // 황금비
 ];
 // currentMode = 도구 패널의 현재 선택 모드 ("drawline"/"hline"/"vline"/
 // "drawrect"/"drawcircle"/"drawopenpath"/"fib"/"eraseshape"/null).
@@ -186,19 +190,55 @@ document.querySelectorAll("#toolbar button.tool").forEach(function (b) {
 // 초기 active — PC 는 추세선, 모바일은 비활성(pan)
 setToolActive(currentMode);
 
-// 방금 그린 line shape 을 피보나치 7개 라인으로 변환
+// 피보나치 라인 그룹별로 오른쪽 끝에 "61.8%  17,500원" 형식 라벨 생성
+function fibAnnotations(shapes) {
+  const anns = [];
+  (shapes || []).forEach(function (s) {
+    const gid = fibGroupId(s);
+    if (!gid || !s.name) return;
+    const parts = s.name.split("|");
+    if (parts.length < 2) return;
+    const ratio = parseFloat(parts[1]);
+    if (isNaN(ratio)) return;
+    const xR = Math.max(s.x0, s.x1);
+    const pct = (ratio * 100);
+    const pctTxt = (Math.abs(pct - Math.round(pct)) < 0.05)
+      ? pct.toFixed(0) + "%"
+      : pct.toFixed(1) + "%";
+    const priceTxt = (s.y0 != null)
+      ? Math.round(s.y0).toLocaleString() + "원"
+      : "";
+    const color = (s.line && s.line.color) || "#1f77b4";
+    anns.push({
+      x: xR, y: s.y0, xref: "x", yref: "y",
+      text: pctTxt + (priceTxt ? " · " + priceTxt : ""),
+      showarrow: false,
+      xanchor: "right", yanchor: "middle",
+      font: { size: 10, color: color },
+      bgcolor: "rgba(255,255,255,0.88)",
+      bordercolor: color, borderwidth: 1, borderpad: 2,
+    });
+  });
+  return anns;
+}
+
+// 방금 그린 line shape 을 피보나치 라인으로 변환.
+// 사용자가 그린 시작점(s.x0,y0)=0%, 끝점(s.x1,y1)=100%.
+// 방향 유지 — 위로 그렸으면 100%가 위, 아래로 그렸으면 100%가 아래.
+// 확장은 100% 방향으로 더 진행 (1.272, 1.618 = 황금비).
 function convertToFib(s, allShapes) {
-  const lo = Math.min(s.y0, s.y1);
-  const hi = Math.max(s.y0, s.y1);
-  const range = hi - lo;
-  const xL = Math.min(s.x0, s.x1);
-  const xR = Math.max(s.x0, s.x1);
+  const x0 = s.x0, y0 = s.y0;
+  const x1 = s.x1, y1 = s.y1;
+  const dx = x1 - x0;
+  const dy = y1 - y0;
   const groupId = "fib-" + Date.now();
   const fibShapes = FIB_RATIOS.map(function (f) {
-    const y = lo + range * (1 - f.r);   // 위에서부터 0% → 100%
+    const y = y0 + dy * f.r;
+    // x 범위는 시작 x ~ 차트 오른쪽 끝(extendRight가 갱신)
+    const xL = Math.min(x0, x1);
     return {
       type: "line", xref: "x", yref: "y",
-      x0: xL, y0: y, x1: xR, y1: y,
+      x0: xL, y0: y, x1: Math.max(x0, x1), y1: y,
       line: { color: f.color, width: 2, dash: "dot" },
       editable: true, layer: "above",
       name: groupId + "|" + f.r.toFixed(3),
@@ -345,7 +385,9 @@ function buildFigure(a, shapes) {
           bordercolor: isHi ? "#c62828" : "#1565c0",
           borderwidth: 1, borderpad: 3
         };
-      }))
+      })),
+      // 피보나치 라벨 — 각 라인 오른쪽 끝에 [%  가격] 표시
+      ...fibAnnotations(shapes),
     ],
     xaxis: { rangeslider: { visible: false }, showticklabels: false,
       title: "(봉 번호 숨김)", anchor: "y2",
