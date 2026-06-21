@@ -51,6 +51,27 @@
     #mode-toggle button { padding: 6px 8px; min-height: 32px; font-size: 12px; }
     #tools { padding: 3px 6px; font-size: 12px; }
   }
+
+  /* ── HTS 스타일 그리기 도구 패널 (2026-06-22 사장님 요청) ──
+     차트 위에 큰 버튼들로 도구 풀세트. 활성화된 도구는 주황색 강조. */
+  #toolbar { display: flex; flex-wrap: wrap; gap: 4px;
+    padding: 6px 8px 4px; background: #f8f8f8;
+    border-bottom: 1px solid #e5e5e5; }
+  #toolbar button { flex: 1 1 0; min-width: 60px; min-height: 38px;
+    border: 1px solid #d8d8d8; background: #fff;
+    border-radius: 6px; padding: 6px 8px; cursor: pointer;
+    color: #444; font-size: 12px; font-weight: 500;
+    display: inline-flex; align-items: center; justify-content: center;
+    gap: 4px; }
+  #toolbar button:hover { background: #f0f0f0; }
+  #toolbar button.active { background: #ff9500; color: #fff;
+    border-color: #ff9500; }
+  #toolbar button.danger { color: #c0392b; border-color: #e3b7b1; }
+  #toolbar button.danger:hover { background: #fdf0ee; }
+  @media (max-width: 768px) {
+    #toolbar { padding: 4px 6px 3px; gap: 3px; }
+    #toolbar button { min-width: 52px; min-height: 36px; font-size: 11px; }
+  }
 </style>
 </head>
 <body>
@@ -61,14 +82,21 @@
   <button id="btn-draw" type="button">📏 추세선 그리기</button>
   <button id="btn-zoom" type="button">🔍 이동/줌</button>
 </div>
-<div id="fib-bar" style="display:flex; gap:4px; padding:4px 8px 0;">
-  <button id="btn-fib" type="button"
-    style="flex:1; border:1px solid #c7d6ff; background:#eff3ff;
-           border-radius:6px; padding:8px 10px; cursor:pointer;
-           color:#2c5dff; font-size:13px;">
-    🔢 피보나치 되돌림 (선 그으면 자동 변환)
-  </button>
+<!-- 2026-06-22 사장님: HTS 처럼 차트 위에 그리기 도구 풀세트.
+     활성화된 도구는 주황색 강조. data-mode 가 dragmode/특수모드 식별자. -->
+<div id="toolbar">
+  <button class="tool" data-mode="drawline">📏 추세선</button>
+  <button class="tool" data-mode="hline">─ 수평선</button>
+  <button class="tool" data-mode="vline">│ 수직선</button>
+  <button class="tool" data-mode="drawrect">⬜ 사각형</button>
+  <button class="tool" data-mode="drawcircle">⭕ 원</button>
+  <button class="tool" data-mode="drawopenpath">✏️ 자유선</button>
+  <button class="tool" data-mode="fib">🔢 피보나치</button>
+  <button class="tool" data-mode="eraseshape">🧽 지우개</button>
+  <button class="tool danger" data-mode="clearall">🗑 전체 삭제</button>
 </div>
+<!-- 호환 보존: 이전 fib-bar div 는 비웠지만 adjustHeight 가 참조하므로 유지 -->
+<div id="fib-bar" style="display:none;"></div>
 <div id="chart"></div>
 <div id="tools"></div>
 <script>
@@ -102,8 +130,7 @@ if (window.innerWidth <= 768) {
   document.getElementById("btn-zoom").classList.remove("active");
 }
 
-// 2026-06-20: 피보나치 모드 — 켠 상태에서 사용자가 선을 그으면
-// plotly_relayout 핸들러가 그 line shape 을 잡아 fib 라인 6개로 변환.
+// 2026-06-20: 피보나치 — 7개 라인. 2026-06-22: HTS 도구 패널 통합.
 const FIB_RATIOS = [
   { r: 0.000, color: "#1f77b4" },
   { r: 0.236, color: "#2ca02c" },
@@ -113,30 +140,51 @@ const FIB_RATIOS = [
   { r: 0.786, color: "#2ca02c" },
   { r: 1.000, color: "#1f77b4" },
 ];
+// currentMode = 도구 패널의 현재 선택 모드 ("drawline"/"hline"/"vline"/
+// "drawrect"/"drawcircle"/"drawopenpath"/"fib"/"eraseshape"/null).
+// fibMode / hlineMode / vlineMode 는 currentMode 로부터 파생.
+let currentMode = (window.innerWidth <= 768) ? null : "drawline";
 let fibMode = false;
-function updateFibBtn() {
-  const b = document.getElementById("btn-fib");
-  if (fibMode) {
-    b.style.background = "#2c5dff";
-    b.style.color = "#fff";
-    b.textContent = "🔢 피보나치 ON — 차트에 선 그으세요";
-  } else {
-    b.style.background = "#eff3ff";
-    b.style.color = "#2c5dff";
-    b.textContent = "🔢 피보나치 되돌림 (선 그으면 자동 변환)";
-  }
+
+function setToolActive(mode) {
+  document.querySelectorAll("#toolbar button.tool").forEach(function (b) {
+    if (b.getAttribute("data-mode") === mode) b.classList.add("active");
+    else b.classList.remove("active");
+  });
 }
-document.getElementById("btn-fib").addEventListener("click", function () {
-  fibMode = !fibMode;
-  // 피보나치 켜면 자동으로 drawline 모드로
-  if (fibMode && gd && gd.layout) {
-    Plotly.relayout(gd, { dragmode: "drawline" });
-    dragMode = "drawline";
+function applyMode(mode) {
+  currentMode = mode;
+  fibMode = (mode === "fib");
+  setToolActive(mode);
+  // dragmode 설정
+  let dm;
+  if (mode === "drawline" || mode === "hline" || mode === "vline"
+      || mode === "fib") {
+    dm = "drawline";
+  } else if (mode === "drawrect")    dm = "drawrect";
+  else if (mode === "drawcircle")    dm = "drawcircle";
+  else if (mode === "drawopenpath")  dm = "drawopenpath";
+  else if (mode === "eraseshape")    dm = "eraseshape";
+  else dm = "pan";
+  dragMode = dm;
+  if (gd && gd.layout) Plotly.relayout(gd, { dragmode: dm });
+  // mode-toggle(모바일) 상태도 동기화
+  if (mode === "drawline" || mode === "hline" || mode === "vline"
+      || mode === "fib" || mode === "drawrect" || mode === "drawcircle"
+      || mode === "drawopenpath") {
     document.getElementById("btn-draw").classList.add("active");
     document.getElementById("btn-zoom").classList.remove("active");
   }
-  updateFibBtn();
+}
+document.querySelectorAll("#toolbar button.tool").forEach(function (b) {
+  b.addEventListener("click", function () {
+    const m = b.getAttribute("data-mode");
+    if (m === "clearall") { clearAll(); return; }
+    applyMode(m);
+  });
 });
+// 초기 active — PC 는 추세선, 모바일은 비활성(pan)
+setToolActive(currentMode);
 
 // 방금 그린 line shape 을 피보나치 7개 라인으로 변환
 function convertToFib(s, allShapes) {
@@ -220,6 +268,8 @@ function fibGroupId(s) {
 }
 function shapeLabel(s) {
   if (fibGroupId(s)) return "피보나치";
+  if (s.name && s.name.indexOf("hline-") === 0) return "수평선";
+  if (s.name && s.name.indexOf("vline-") === 0) return "수직선";
   switch (s.type) {
     case "line":   return "추세선";
     case "rect":   return "사각형";
@@ -228,6 +278,8 @@ function shapeLabel(s) {
     default:       return "도형";
   }
 }
+function isHline(s) { return s.name && s.name.indexOf("hline-") === 0; }
+function isVline(s) { return s.name && s.name.indexOf("vline-") === 0; }
 
 function buildFigure(a, shapes) {
   const vol = a.v || [];
@@ -308,16 +360,14 @@ function buildFigure(a, shapes) {
   return { traces: traces, layout: layout };
 }
 
-// iframe 전체 높이 재측정 — pushState/renderTools 이후에도 호출해
-// 추세선 칩이 추가되면서 #tools 가 늘어나도 영역이 잘리지 않게 한다.
-// (2026-06-16 사장님 버그 리포트: "추세선1 추세선2 + 전체삭제 없어졋다")
-// (2026-06-22 사장님 버그 리포트: 피보나치 버튼 밑 짤림 — fib-bar 높이 누락)
+// iframe 전체 높이 재측정 — DOM 실측해서 setHeight 재호출.
+// 2026-06-22: HTS 도구 패널(#toolbar) 높이 포함. fib-bar 는 호환만 유지.
 function adjustHeight() {
   const modeH = document.getElementById("mode-toggle").offsetHeight || 0;
-  const fibH = document.getElementById("fib-bar").offsetHeight || 0;
+  const tbH = document.getElementById("toolbar").offsetHeight || 0;
   const chartH = document.getElementById("chart").offsetHeight || 560;
   const toolsH = toolsEl.offsetHeight || 52;
-  setHeight(modeH + fibH + chartH + toolsH + 20);
+  setHeight(modeH + tbH + chartH + toolsH + 20);
 }
 function pushState() {
   renderTools();
@@ -398,7 +448,7 @@ function snapHorizontal() {
   let changed = false;
   (gd.layout.shapes || []).forEach(function (s) {
     if (s.type !== "line") return;
-    if (fibGroupId(s)) return;       // 피보나치 라인은 스냅 X (이미 수평)
+    if (fibGroupId(s) || isHline(s) || isVline(s)) return;
     const ang = lineAngleDeg(s);
     if (ang < SNAP_DEG || ang > 180 - SNAP_DEG) {
       const my = (s.y0 + s.y1) / 2;
@@ -415,9 +465,25 @@ function extendRight() {
   if (!fl || !fl.xaxis) return false;
   const xMax = fl.xaxis.range[1];
   let changed = false;
+  const xMin = fl.xaxis.range[0];
+  const yRange = (fl.yaxis && fl.yaxis.range) ? fl.yaxis.range : null;
   (gd.layout.shapes || []).forEach(function (s) {
     if (s.type !== "line") return;
     if (fibGroupId(s)) return;       // 피보나치는 오른쪽 끝까지 별도 처리(아래)
+    // 수평선: x 범위만 차트 전체로 강제
+    if (isHline(s)) {
+      if (s.x0 !== xMin || s.x1 !== xMax) {
+        s.x0 = xMin; s.x1 = xMax; changed = true;
+      }
+      return;
+    }
+    // 수직선: y 범위만 차트 전체로 강제
+    if (isVline(s)) {
+      if (yRange && (s.y0 !== yRange[0] || s.y1 !== yRange[1])) {
+        s.y0 = yRange[0]; s.y1 = yRange[1]; changed = true;
+      }
+      return;
+    }
     // 왼쪽(앵커) / 오른쪽 끝 구분
     let xa, ya, xb, yb;
     if (s.x0 <= s.x1) { xa = s.x0; ya = s.y0; xb = s.x1; yb = s.y1; }
@@ -498,9 +564,43 @@ function render(a) {
         if (last && last.type === "line" && !fibGroupId(last)) {
           const newShapes = convertToFib(last, shapes);
           fibMode = false;
-          updateFibBtn();
+          currentMode = "drawline";
+          setToolActive("drawline");
           applyingSnap = true;
           Plotly.relayout(gd, { shapes: newShapes }).then(function () {
+            applyingSnap = false;
+            renderTools();
+            adjustHeight();
+            setValue({ lines: collectLines() });
+          });
+          return;
+        }
+      }
+
+      // 수평선/수직선 모드 — 사용자가 그린 마지막 line 을 수평/수직으로 강제 정렬
+      if (currentMode === "hline" || currentMode === "vline") {
+        const shapes = (gd.layout.shapes || []).slice();
+        const last = shapes.length ? shapes[shapes.length - 1] : null;
+        if (last && last.type === "line" && !fibGroupId(last)
+            && !last.name) {
+          const fl = gd._fullLayout;
+          const xR = fl.xaxis.range;
+          const yR = fl.yaxis.range;
+          if (currentMode === "hline") {
+            const ym = (last.y0 + last.y1) / 2;
+            last.x0 = xR[0]; last.x1 = xR[1];
+            last.y0 = ym; last.y1 = ym;
+            last.name = "hline-" + Date.now();
+            last.line = { color: "#e8453c", width: 2, dash: "dash" };
+          } else {
+            const xm = (last.x0 + last.x1) / 2;
+            last.y0 = yR[0]; last.y1 = yR[1];
+            last.x0 = xm; last.x1 = xm;
+            last.name = "vline-" + Date.now();
+            last.line = { color: "#1565c0", width: 2, dash: "dash" };
+          }
+          applyingSnap = true;
+          Plotly.relayout(gd, { shapes: shapes }).then(function () {
             applyingSnap = false;
             renderTools();
             adjustHeight();
