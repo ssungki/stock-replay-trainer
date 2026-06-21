@@ -190,6 +190,32 @@ document.querySelectorAll("#toolbar button.tool").forEach(function (b) {
 // 초기 active — PC 는 추세선, 모바일은 비활성(pan)
 setToolActive(currentMode);
 
+// 모든 annotation(거래량 라벨, peaks, 피보나치 라벨) 통합 빌더.
+// convertToFib 후에도 호출해 라벨 갱신 가능.
+function buildAnnotations(a, shapes) {
+  return [
+    { xref: "paper", yref: "paper", x: 0, y: 0.205,
+      text: "거래량", showarrow: false,
+      xanchor: "left", yanchor: "bottom",
+      font: { size: 11, color: "#999" } },
+    ...((a.peaks || []).map(function (p) {
+      const isHi = p.kind === "high";
+      return {
+        x: p.x, y: p.y, xref: "x", yref: "y",
+        text: p.label, showarrow: true, arrowhead: 2,
+        arrowsize: 1, arrowwidth: 1.5,
+        arrowcolor: isHi ? "#c62828" : "#1565c0",
+        ax: 0, ay: isHi ? -32 : 32,
+        font: { size: 13, color: isHi ? "#c62828" : "#1565c0" },
+        bgcolor: "rgba(255,255,255,0.88)",
+        bordercolor: isHi ? "#c62828" : "#1565c0",
+        borderwidth: 1, borderpad: 3
+      };
+    })),
+    ...fibAnnotations(shapes),
+  ];
+}
+
 // 피보나치 라인 그룹별로 오른쪽 끝에 "61.8%  17,500원" 형식 라벨 생성
 function fibAnnotations(shapes) {
   const anns = [];
@@ -367,28 +393,7 @@ function buildFigure(a, shapes) {
     height: _chartH, margin: { l: 10, r: 10, t: 30, b: 10 },
     dragmode: dragMode, newshape: { line: { color: ORANGE, width: 4 } },
     shapes: shapes,
-    annotations: [
-      { xref: "paper", yref: "paper", x: 0, y: 0.205,
-        text: "거래량", showarrow: false, xanchor: "left", yanchor: "bottom",
-        font: { size: 11, color: "#999" } },
-      // 보이는 구간 최고·최저 표시
-      ...((a.peaks || []).map(function (p) {
-        const isHi = p.kind === "high";
-        return {
-          x: p.x, y: p.y, xref: "x", yref: "y",
-          text: p.label,
-          showarrow: true, arrowhead: 2, arrowsize: 1, arrowwidth: 1.5,
-          arrowcolor: isHi ? "#c62828" : "#1565c0",
-          ax: 0, ay: isHi ? -32 : 32,
-          font: { size: 13, color: isHi ? "#c62828" : "#1565c0" },
-          bgcolor: "rgba(255,255,255,0.88)",
-          bordercolor: isHi ? "#c62828" : "#1565c0",
-          borderwidth: 1, borderpad: 3
-        };
-      })),
-      // 피보나치 라벨 — 각 라인 오른쪽 끝에 [%  가격] 표시
-      ...fibAnnotations(shapes),
-    ],
+    annotations: buildAnnotations(a, shapes),
     xaxis: { rangeslider: { visible: false }, showticklabels: false,
       title: "(봉 번호 숨김)", anchor: "y2",
       range: _xr, autorange: false },
@@ -609,7 +614,10 @@ function render(a) {
           currentMode = "drawline";
           setToolActive("drawline");
           applyingSnap = true;
-          Plotly.relayout(gd, { shapes: newShapes }).then(function () {
+          Plotly.relayout(gd, {
+            shapes: newShapes,
+            annotations: buildAnnotations(gd._lastArgs || {}, newShapes),
+          }).then(function () {
             applyingSnap = false;
             renderTools();
             adjustHeight();
@@ -642,7 +650,10 @@ function render(a) {
             last.line = { color: "#1565c0", width: 2, dash: "dash" };
           }
           applyingSnap = true;
-          Plotly.relayout(gd, { shapes: shapes }).then(function () {
+          Plotly.relayout(gd, {
+            shapes: shapes,
+            annotations: buildAnnotations(gd._lastArgs || {}, shapes),
+          }).then(function () {
             applyingSnap = false;
             renderTools();
             adjustHeight();
@@ -654,9 +665,14 @@ function render(a) {
 
       const snapped = snapHorizontal();   // 거의 수평인 선을 정확히 수평으로
       const extended = extendRight();      // 오른쪽 끝까지 연장
+      // 피보나치 라벨도 매번 갱신 (라인 x 범위 갱신 + 가격 표시)
+      const newAnns = buildAnnotations(gd._lastArgs || {}, gd.layout.shapes);
       if (snapped || extended) {
         applyingSnap = true;
-        Plotly.relayout(gd, { shapes: gd.layout.shapes }).then(function () {
+        Plotly.relayout(gd, {
+          shapes: gd.layout.shapes,
+          annotations: newAnns,
+        }).then(function () {
           applyingSnap = false;
           renderTools();
           adjustHeight();
@@ -664,6 +680,8 @@ function render(a) {
         });
         return;
       }
+      // shapes 추가/삭제만 일어난 경우에도 annotations 갱신
+      Plotly.relayout(gd, { annotations: newAnns });
       renderTools();
       adjustHeight();
       setValue({ lines: collectLines() });
