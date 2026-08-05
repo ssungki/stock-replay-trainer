@@ -1,8 +1,8 @@
-streamlit==1.57.0
-finance-datareader==0.9.202
-plotly==6.7.0
-pandas==3.0.3
-numpy==2.4.5
-pyarrow==24.0.0
-lxml==6.1.0
-requests==2.34.2
+streamlit>=1.30
+finance-datareader>=0.9
+plotly>=5.15
+pandas>=2.0
+numpy>=1.24
+pyarrow>=15
+lxml>=5.0
+requests>=2.30
